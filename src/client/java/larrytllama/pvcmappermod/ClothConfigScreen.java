@@ -9,8 +9,10 @@ import me.shedaniel.clothconfig2.gui.entries.LongSliderEntry;
 import me.shedaniel.clothconfig2.gui.entries.StringListEntry;
 import me.shedaniel.clothconfig2.impl.builders.EnumSelectorBuilder;
 import me.shedaniel.clothconfig2.impl.builders.IntSliderBuilder;
+import java.net.URI;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
 
 public class ClothConfigScreen extends Screen {
@@ -33,7 +35,7 @@ public class ClothConfigScreen extends Screen {
     private BooleanListEntry useDarkTiles;
     private BooleanListEntry collectData;
     private BooleanListEntry debugMode;
-    private BooleanListEntry hideMinimapNetworks;
+    private BooleanListEntry showNetworkLines;
     private StringListEntry mapTileSource;
     private IntegerSliderEntry miniMapZoom;
     private LongSliderEntry minimapScale;
@@ -48,10 +50,11 @@ public class ClothConfigScreen extends Screen {
     private BooleanListEntry showNetworks;
     private BooleanListEntry showPlayers;
     private BooleanListEntry showClaims;
+    private BooleanListEntry showWelcomeScreen;
 
     public Screen getClothConfig(Screen parent) {
         ConfigBuilder builder = ConfigBuilder.create()
-        //.setParentScreen(this)
+        .setParentScreen(parent)
         .setSavingRunnable(() -> {
             sp.miniMapEnabled = this.showMinimap.getValue();
             sp.miniMapPos = this.miniMapPos.getValue();
@@ -63,7 +66,7 @@ public class ClothConfigScreen extends Screen {
             sp.minimapScale = this.minimapScale.getValue() / 100.0;
             sp.collectData = this.collectData.getValue();
             sp.debugMode = this.debugMode.getValue();
-            sp.hideMinimapNetworks = this.hideMinimapNetworks.getValue();
+            sp.hideMinimapNetworks = !this.showNetworkLines.getValue();
             sp.orwellMeter = this.orwellMeter.getValue();
             sp.showWelcomePopup = this.showWelcomePopup.getValue();
             sp.showLeavingPopup = this.showLeavingPopup.getValue();
@@ -73,7 +76,12 @@ public class ClothConfigScreen extends Screen {
             sp.showAreas = this.showAreas.getValue();
             sp.showNetworks = this.showNetworks.getValue();
             sp.showPlayers = this.showPlayers.getValue();
-            sp.showClaims = this.showClaims.getValue();
+            if (this.showClaims != null) {
+                sp.showClaims = this.showClaims.getValue();
+            }
+            if (this.showWelcomeScreen != null) {
+                sp.shownDataNotice = !this.showWelcomeScreen.getValue();
+            }
 
             sp.saveSettings();
         })
@@ -86,11 +94,12 @@ public class ClothConfigScreen extends Screen {
             .setTooltip(Component.literal("Hide the minimap from view."))
             .build();
         minimapSettings.addEntry(this.showMinimap);
-        this.hideMinimapNetworks = entryBuilder.startBooleanToggle(Component.literal("Hide Networks"), sp.hideMinimapNetworks)
-            .setDefaultValue(false)
-            .setTooltip(Component.literal("Hide the network lines from the minimap view."))
+        // Inverted for UI consistency while not touching settings file
+        this.showNetworkLines = entryBuilder.startBooleanToggle(Component.literal("Show Network Lines"), !sp.hideMinimapNetworks)
+            .setDefaultValue(true)
+            .setTooltip(Component.literal("Show the network lines on the minimap view."))
             .build();
-        minimapSettings.addEntry(this.hideMinimapNetworks);
+        minimapSettings.addEntry(this.showNetworkLines);
         this.miniMapPos = entryBuilder.startEnumSelector(Component.literal("Minimap Position"), MiniMapPositions.class, sp.miniMapPos)
             .setDefaultValue(MiniMapPositions.TOP_RIGHT) 
             .setTooltip(Component.literal("Choose where the minimap goes!"))
@@ -148,6 +157,11 @@ public class ClothConfigScreen extends Screen {
             .setTooltip(Component.literal("Show player markers on minimap and map screen."))
             .build();
         filterSettings.addEntry(this.showPlayers);
+        this.showClaims = entryBuilder.startBooleanToggle(Component.literal("Show Claims"), sp.showClaims)
+            .setDefaultValue(false)
+            .setTooltip(Component.literal("Show claim borders on the map screen."))
+            .build();
+        filterSettings.addEntry(this.showClaims);
         filterSettings.addEntry(
             entryBuilder.startTextDescription(Component.literal("You can also change these settings in the map menu by clicking the filters button.")).build()
         );
@@ -184,11 +198,31 @@ public class ClothConfigScreen extends Screen {
             .setTooltip(Component.literal("Check for PVC Mapper Mod updates on Game Launch"), Component.literal("(Displays a non-intrusive popup in the top right to let you know!)"))
             .build();
         miscSettings.addEntry(this.checkForUpdates);
-        this.collectData = entryBuilder.startBooleanToggle(Component.literal("Collect Ranks Data"), sp.collectData)
+        this.collectData = entryBuilder.startBooleanToggle(Component.literal("Enable Mapper Uploads"), sp.collectData)
             .setDefaultValue(false)
-            .setTooltip(Component.literal("Contribute to the PVC Mapper, uploading ranks and player nicknames!"), Component.literal("(The mod simply uploads the entries provided by the tab list)"))
+            .setTooltip(
+                Component.literal("Contribute to the PVC Mapper by uploading ranks and player nicknames!"),
+                Component.literal("(The mod simply uploads the entries provided by the tab list)")
+            )
             .build();
         miscSettings.addEntry(this.collectData);
+
+        miscSettings.addEntry(
+            entryBuilder.startTextDescription(
+                Component.literal("  ↳ What data is uploaded? ")
+                    .append(Component.literal("See Data Notice").withStyle(s -> s
+                        .withColor(ChatFormatting.AQUA)
+                        .withUnderlined(true)
+                        .withClickEvent(new ClickEvent.OpenUrl(URI.create("https://pvc.coolwebsite.uk/help/data-uploading")))
+                    ))
+            ).build()
+        );
+
+        this.showWelcomeScreen = entryBuilder.startBooleanToggle(Component.literal("Show Welcome Screen on Next Connect"), !sp.shownDataNotice)
+            .setDefaultValue(false)
+            .setTooltip(Component.literal("Re-display the welcome notice and keybind reminders next time you connect to PVC."))
+            .build();
+        miscSettings.addEntry(this.showWelcomeScreen);
         
         this.showInOtherPlaces = entryBuilder.startBooleanToggle(Component.literal("Show mod features elsewhere"), sp.showInOtherPlaces)
             .setDefaultValue(false)

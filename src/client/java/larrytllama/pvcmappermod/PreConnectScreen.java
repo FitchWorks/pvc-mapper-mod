@@ -43,42 +43,86 @@ public class PreConnectScreen extends Screen {
             System.out.println(e);
         }
 
-        MutableComponent messageString = Component.empty().withStyle(Style.EMPTY)
-            .append(Component.literal("Hello!").withStyle(Style.EMPTY.withColor(ChatFormatting.YELLOW)))
-            .append(Component.literal(" Thanks for trying the unofficial PVC Mapper Mod! Once in game:\n"))
-            .append(Component.literal("- Press M to open the map\n"))
-            .append(Component.literal("- Press comma , to open the shops viewer!\n"))
-            .append(Component.literal("(You can rebind these keys in the settings).\n"))
-            .append(Component.literal("- Use /mapper help to see the mod commands!\n\n"))
-            .append(Component.literal("The mod also auto-uploads things like player ranks (taken from the Tab list), nether portal locations, and Terra2 map data (coming soon!). This stuff isn't available from the PVC website, so is contributed by mod users like you!\n"))
-            .append(Component.literal("To find out more, Click 'More Info'. Use the checkbox below to enable or disable it.\n\n"))
-            .append(Component.literal("Happy Mappering - Larry :)").withStyle(Style.EMPTY.withColor(ChatFormatting.GREEN)));
+        Component messageString = text(
+            styled("Hello!", ChatFormatting.YELLOW),
+            " Thanks for trying the unofficial PVC Mapper Mod! Once in game:\n",
+            styled("  • ", ChatFormatting.GRAY), "Press ", styled("[M]", ChatFormatting.GOLD), " to open the map\n",
+            styled("  • ", ChatFormatting.GRAY), "Press comma ", styled("[,]", ChatFormatting.GOLD), " to open the shops viewer!\n",
+            styled("  (You can rebind these keys in the settings).\n", ChatFormatting.GRAY),
+            styled("  • ", ChatFormatting.GRAY), "Use ", styled("/mapper help", ChatFormatting.AQUA), " to see the mod commands!\n\n",
+            "The mod also auto-uploads things like player ranks (taken from the Tab list), nether portal locations, and Terra2 map data (coming soon!). This stuff isn't available from the official PVC website, so is contributed by mod users like you!\n",
+            "To find out more, click 'See Data Notice'. Use this checkbox to enable or disable it:"
+        );
         
+        int messageY = 20 + (Minecraft.getInstance().font.lineHeight * 2);
         MultiLineTextWidget message = new MultiLineTextWidget(
             messageString, 
             Minecraft.getInstance().font
         );
         message.setMaxWidth(this.width - 40);
-        message.setPosition(20, 20 + (Minecraft.getInstance().font.lineHeight*2));
+        message.setPosition(20, messageY);
         this.addRenderableWidget(message);
 
-        // Bottom checkboxes and buttons
-        Checkbox checkbox = Checkbox.builder(Component.literal("Enable Mapper Uploads"), Minecraft.getInstance().font).selected(true).onValueChange((cb, bl) -> {
-            PVCMapperModClient.INSTANCE.sp.collectData = bl;
-        }).pos(20, this.height-65).build();
+        // Checkbox and More Info placed directly under the explanation text
+        int controlsY = message.getY() + message.getHeight() + 8;
+        // Keep within screen bounds if screen is small / zoomed in
+        if (controlsY + 50 > this.height - 40) {
+            controlsY = Math.max(message.getY() + 20, this.height - 65);
+        }
+
+        Checkbox checkbox = Checkbox.builder(Component.literal("Enable Mapper Uploads"), Minecraft.getInstance().font)
+            .selected(PVCMapperModClient.INSTANCE.sp.collectData)
+            .onValueChange((cb, bl) -> {
+                PVCMapperModClient.INSTANCE.sp.collectData = bl;
+            })
+            .pos(20, controlsY)
+            .build();
         this.addRenderableWidget(checkbox);
 
-        this.addRenderableWidget(Button.builder(Component.literal("More Info"), ConfirmLinkScreen.confirmLink(this, dataUploadsLink))
-            .bounds(this.width - 110, this.height-65, 100, 20).build());
+        Component moreInfoText = Component.literal("See Data Notice");
+        int moreInfoWidth = Minecraft.getInstance().font.width(moreInfoText) + 14;
+        int moreInfoX = checkbox.getX() + checkbox.getWidth() + 10;
+        int signoffY;
+        if (moreInfoX + moreInfoWidth <= this.width - 20) {
+            this.addRenderableWidget(Button.builder(moreInfoText, ConfirmLinkScreen.confirmLink(this, dataUploadsLink))
+                .bounds(moreInfoX, controlsY - 1, moreInfoWidth, 20).build());
+            signoffY = controlsY + 26;
+        } else {
+            this.addRenderableWidget(Button.builder(moreInfoText, ConfirmLinkScreen.confirmLink(this, dataUploadsLink))
+                .bounds(20, controlsY + 22, moreInfoWidth, 20).build());
+            signoffY = controlsY + 46;
+        }
 
+        StringWidget signoff = new StringWidget(
+            Component.literal("Happy Mappering — Larry :)").withStyle(ChatFormatting.GREEN),
+            Minecraft.getInstance().font
+        );
+        signoff.setPosition(20, signoffY);
+        this.addRenderableWidget(signoff);
 
         this.addRenderableWidget(Button.builder(Component.literal("Connect to PVC"), btn -> {
             PVCMapperModClient.INSTANCE.sp.shownDataNotice = true;
             PVCMapperModClient.INSTANCE.sp.saveSettings();
             onConfirm.run();
-        }).bounds(this.width/2 - 110, this.height-40, 100, 20).build());
+        }).bounds(this.width/2 - 110, this.height - 35, 100, 20).build());
         this.addRenderableWidget(Button.builder(Component.literal("Cancel"), btn -> {
             CompatUtils.setScreen(parent);
-        }).bounds(this.width/2 + 10, this.height-40, 100, 20).build());
+        }).bounds(this.width/2 + 10, this.height - 35, 100, 20).build());
+    }
+
+    private static MutableComponent text(Object... parts) {
+        MutableComponent root = Component.empty();
+        for (Object part : parts) {
+            if (part instanceof Component c) {
+                root.append(c);
+            } else if (part != null) {
+                root.append(Component.literal(part.toString()));
+            }
+        }
+        return root;
+    }
+
+    private static MutableComponent styled(String s, ChatFormatting... formats) {
+        return Component.literal(s).withStyle(formats);
     }
 }
