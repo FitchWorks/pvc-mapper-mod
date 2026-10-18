@@ -21,11 +21,18 @@ import java.util.concurrent.CompletableFuture;
 
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.minecraft.ChatFormatting;
+import net.minecraft.client.gui.screens.inventory.MerchantScreen;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.Style;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.component.CustomData;
+import net.minecraft.world.item.trading.MerchantOffer;
+import net.minecraft.world.item.trading.MerchantOffers;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -160,6 +167,73 @@ public class ShopsHandler {
     public static String IDToPrettyName(String itemID) {
         String allLowerCase = itemID.replaceAll("_", " ").toLowerCase();
         return allLowerCase.substring(0, 1).toUpperCase() + allLowerCase.substring(1);
+    }
+
+    public static AdminShopItem parseAdminShopItem(ItemStack item) {
+        if(item == null || item.isEmpty()) return null;
+        AdminShopItem asi = new AdminShopItem();
+        asi.amount = item.getCount();
+        if(item.getCustomName() != null) asi.name = item.getCustomName().getString();
+        asi.type = BuiltInRegistries.ITEM.getKey(item.getItem()).getPath().toUpperCase();
+        if(asi.type.contains("SHULKER_BOX")) {
+            //? if <26.1 {
+            List<ItemStack> items = item.get(DataComponents.CONTAINER).stream().toList();
+            asi.lore = new String[items.size()];
+            int i=0;
+            for (ItemStack itemm : items) {
+                asi.lore[i] = "- " + itemm.getCount() + "x " + BuiltInRegistries.ITEM.getKey(itemm.getItem()).getPath().toUpperCase();
+                i++;
+            }
+            //?} else {
+            /*
+            if(item.get(DataComponents.CONTAINER) != null) {
+                int i=0;
+                for (var template : item.get(DataComponents.CONTAINER).nonEmptyItems()) {
+                    asi.lore[i] = "- " + template.count() + "x " + template.item().getRegisteredName();
+                    i++;
+                }
+            }
+            */
+            //?}
+        } else {
+            List<Component> lines = item.get(DataComponents.LORE).lines();
+            asi.lore = new String[lines.size()];
+            int i = 0;
+            for (Component line : lines) {
+                asi.lore[i] = line.getString();
+                i++;
+            }
+        }
+        asi.enchant = new JsonObject();
+        item.getEnchantments().entrySet().forEach((entry) -> {
+            String id = entry.getKey().getRegisteredName();
+            asi.enchant.addProperty(id, entry.getIntValue());
+        });
+        return asi;
+    }
+    
+    public static AdminShop decodeShops(MerchantScreen merchantScreen, Entity entity) {
+        AdminShop as = new AdminShop();
+        as.entity = entity.getType().toString();
+        as.shopName = merchantScreen.getTitle().getString();
+        as.location = String.format("%d, %d, %d", entity.getBlockX(), entity.getBlockY(), entity.getBlockZ());
+        as.world = entity.level().dimension()
+            //? if <1.21.11 {
+            .location()
+            //?}else{
+            /*.identifier()*///?}
+            .toString();
+        MerchantOffers mos = merchantScreen.getMenu().getOffers();
+        as.recipes = new AdminShopRecipe[mos.size()];
+        int i = 0;
+        for (MerchantOffer mo : mos) {
+            as.recipes[i] = new AdminShopRecipe();
+            as.recipes[i].item1 = parseAdminShopItem(mo.getCostA());
+            as.recipes[i].item2 = parseAdminShopItem(mo.getCostB());
+            as.recipes[i].resultItem = parseAdminShopItem(mo.getResult());
+            i=i+1;
+        }
+        return as;
     }
 
     public static CompletableFuture<CustomItem[]> getCustomItems() {
@@ -315,3 +389,25 @@ class ShopsPlayerStats {
     Integer uniqueItemsOnSale;
 }
 
+class AdminShop {
+    String shopName;
+    String location;
+    String world;
+    AdminShopRecipe[] recipes;
+    String entity;
+}
+
+class AdminShopRecipe {
+    AdminShopItem item1;
+    AdminShopItem item2;
+    AdminShopItem resultItem;
+    Integer stock;
+}
+
+class AdminShopItem {
+    String type;
+    String name;
+    String[] lore;
+    Integer amount;
+    JsonObject enchant;
+}

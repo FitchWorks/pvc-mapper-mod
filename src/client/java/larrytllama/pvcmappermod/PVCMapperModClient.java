@@ -15,6 +15,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -31,12 +32,14 @@ import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 /*import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;*///?}
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
+import net.fabricmc.fabric.api.event.player.UseEntityCallback;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.PlayerTabOverlay;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.TitleScreen;
+import net.minecraft.client.gui.screens.inventory.MerchantScreen;
 import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.client.multiplayer.PlayerInfo;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -49,8 +52,13 @@ import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.network.chat.Style;
 import net.minecraft.network.chat.contents.PlainTextContents.LiteralContents;
 import net.minecraft.network.chat.contents.TranslatableContents;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.level.block.Blocks;
+//?if >=26.1{
+/* import net.fabricmc.fabric.api.client.screen.v1.Screens; */
+//?}
 
 public class PVCMapperModClient implements ClientModInitializer {
     public Category MOD_CATEGORY = Category.register(ResIdentifier.of("pvcmappermod", "category").get());
@@ -131,6 +139,8 @@ public class PVCMapperModClient implements ClientModInitializer {
 
 
     boolean wasInPortal = false;
+    Entity lastInteractedEntity = null;
+    long lastInteractTimestamp = 0;
 
     @Override
     public void onInitializeClient() {
@@ -151,7 +161,32 @@ public class PVCMapperModClient implements ClientModInitializer {
         new MapperCmdHandler(pfu, this);
         this.pfu = pfu;
 
+        UseEntityCallback.EVENT.register((player, world, hand, entity, hitResult) -> {
+            if(sp.collectData) {
+                lastInteractedEntity = entity;
+                lastInteractTimestamp = System.currentTimeMillis();
+            }
+            return InteractionResult.PASS;
+        });
+        
         ScreenEvents.AFTER_INIT.register((client, screen, w, h) -> {
+            if(screen instanceof MerchantScreen merchantScreen && sp.collectData) {
+                if(lastInteractedEntity != null && (System.currentTimeMillis() - lastInteractTimestamp < 2000)) {
+                    AtomicBoolean processed = new AtomicBoolean(); // Thread-safe cos it might run in another one
+                    // Trades come after the shop menu instruction for some reason
+                    // Add a pre-render check to see if the trades are there yet
+                    ScreenEvents.afterTick(merchantScreen)
+                    .register((scr) -> { 
+                        if(processed.get()) return;
+                        if(merchantScreen.getMenu().getOffers() != null && !merchantScreen.getMenu().getOffers().isEmpty()) {
+                            AdminShop as = ShopsHandler.decodeShops(merchantScreen, lastInteractedEntity);
+                            pfu.publishAdminShop(as);
+                            processed.set(true);
+                        }
+                    });
+                }
+            }
+
             if (!seenMainMenu && screen instanceof Screen) {
                 seenMainMenu = true;
                 // Check for updates
@@ -406,8 +441,6 @@ public class PVCMapperModClient implements ClientModInitializer {
 
     // Crawl through a string and add hover details to player names
     private Component addPlayerDetailsToChat(Component message) {
-        System.out.println("node: " + message.getString());
-        System.out.println("style: " + message.getStyle());
         MutableComponent out = Component.empty(); // Start with empty message
         // Don't override existing hovering
         if (out.getStyle().getHoverEvent() == null) {
@@ -477,15 +510,12 @@ public class PVCMapperModClient implements ClientModInitializer {
             // Helpfully, PVC's chat system adds this in for anti-chat reporting. Thank you Nem <3
             // P.S Please don't change it
             if(translatable.getKey().equals("%s")) { 
-                System.out.println(message);
                 return addPlayerDetailsToChat(message);
             }
         }
         
-        System.out.println("Original: "+message);
         if(sp.orwellMeter == OrwellianMeter.ALL) {
             Component out = message;
-            System.out.println(out);
             return out;
         }
         // Orwell message types:

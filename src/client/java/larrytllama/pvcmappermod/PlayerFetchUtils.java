@@ -72,6 +72,20 @@ public class PlayerFetchUtils {
         }
     }
 
+    public void publishAdminShop(AdminShop as) {
+        try {
+            java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder()
+                .uri(new URI(NetworkUtils.API_V2 + "/shop-upload/setAdminShop?me="+Minecraft.getInstance().player.getGameProfile().name()))
+                .header("Content-Type", "application/json")
+                .POST(java.net.http.HttpRequest.BodyPublishers.ofString(new Gson().toJson(as)))
+                .build();
+            NetworkUtils.HTTP_CLIENT.sendAsync(request, java.net.http.HttpResponse.BodyHandlers.ofString());
+        } catch(Exception e) {
+            System.out.println("Couldn't publish admin shop...");
+            System.out.println(e);
+        }
+    }
+
     private int errorCount;
     public boolean isUpdating = false;
 
