@@ -188,8 +188,9 @@ public class ShopsHandler {
             /*
             if(item.get(DataComponents.CONTAINER) != null) {
                 int i=0;
+                asi.lore = new String[(int)item.get(DataComponents.CONTAINER).nonEmptyItemCopyStream().count()];
                 for (var template : item.get(DataComponents.CONTAINER).nonEmptyItems()) {
-                    asi.lore[i] = "- " + template.count() + "x " + template.item().getRegisteredName();
+                    asi.lore[i] = "- " + template.count() + "x " + BuiltInRegistries.ITEM.getKey(template.item().value()).getPath().toUpperCase(Locale.ROOT);
                     i++;
                 }
             }
