@@ -32,20 +32,16 @@ public class Terra2MapUpload {
 
                 if(bs.isAir()) {
                     cd.data[z][x].c = 0x000000;
+                } else if (bs.is(Blocks.GRASS_BLOCK) || 
+                    bs.is(Blocks.SHORT_GRASS) || 
+                    bs.is(Blocks.TALL_GRASS) || 
+                    bs.is(Blocks.FERN)) {
+                    cd.data[z][x].c = chunk.getNoiseBiome(pos.getX() >> 2, pos.getY() >> 2, pos.getZ() >> 2).value().getGrassColor(pos.getX(), pos.getZ());//BiomeColors.getAverageGrassColor(chunk.getLevel(), pos);
+                } else if (bs.is(net.minecraft.world.level.block.Blocks.WATER)) {
+                    cd.data[z][x].c = chunk.getNoiseBiome(pos.getX() >> 2, pos.getY() >> 2, pos.getZ() >> 2).value().getWaterColor();//BiomeColors.getAverageWaterColor(chunk.getLevel(), pos);
                 } else {
-                    cd.data[z][x].c = blockColors.getColor(bs, chunk.getLevel(), pos, 0);
-                    
-                    if (bs.is(Blocks.GRASS_BLOCK) || 
-                        bs.is(Blocks.SHORT_GRASS) || 
-                        bs.is(Blocks.TALL_GRASS) || 
-                        bs.is(Blocks.FERN)) {
-                        cd.data[z][x].c = chunk.getNoiseBiome(pos.getX() >> 2, pos.getY() >> 2, pos.getZ() >> 2).value().getGrassColor(pos.getX(), pos.getZ());//BiomeColors.getAverageGrassColor(chunk.getLevel(), pos);
-                    } else if (bs.is(net.minecraft.world.level.block.Blocks.WATER)) {
-                        cd.data[z][x].c = chunk.getNoiseBiome(pos.getX() >> 2, pos.getY() >> 2, pos.getZ() >> 2).value().getWaterColor();//BiomeColors.getAverageWaterColor(chunk.getLevel(), pos);
-                    } else if(cd.data[z][x].c == -1) {
-                        // Standard solid block fallback
-                        cd.data[z][x].c = bs.getMapColor(chunk.getLevel(), pos).col;
-                    }
+                    // Standard solid block fallback
+                    cd.data[z][x].c = bs.getMapColor(chunk.getLevel(), pos).col;
                 }
 
                 // Calculations for shading commence!
