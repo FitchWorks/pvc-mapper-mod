@@ -1,7 +1,7 @@
 package larrytllama.pvcmappermod;
 
 import larrytllama.pvcmappermod.utils.*;
-
+import me.shedaniel.math.Color;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.network.chat.MutableComponent;
@@ -528,6 +528,9 @@ public class FullScreenMap extends Screen {
         });
     }
 
+    public static final ResIdentifier LOCATOR_DOT = ResIdentifier.of("minecraft",
+            "textures/gui/sprites/hud/locator_bar_dot/default_1.png");
+
     public void drawPlayerTooltip(/*? if <26.1 {*/GuiGraphics/*?} else {*//*GuiGraphicsExtractor*//*?}*/ context, PlayerFetch player, int x, int y) {
 
         List<MutableComponent> content = List.of(
@@ -552,6 +555,11 @@ public class FullScreenMap extends Screen {
         context.blit(RenderPipelines.GUI_TEXTURED, hoverPlayerFace.get(),
                 x + TooltipRenderUtil.PADDING_LEFT + minecraft.font.width(content.get(0)) + 1,
                 y + TooltipRenderUtil.PADDING_TOP, 40, 8, 8, 8, 64, 64);
+
+        int hashed = UUID.fromString(player.uuid.replaceFirst("(\\p{XDigit}{8})(\\p{XDigit}{4})(\\p{XDigit}{4})(\\p{XDigit}{4})(\\p{XDigit}{12})", "$1-$2-$3-$4-$5")).hashCode();
+        float[] hsv = java.awt.Color.RGBtoHSB((hashed >> 16) & 0xFF, (hashed >> 8) & 0xFF, hashed & 0xFF, null);
+        int rgbout = 0xFF000000 | (java.awt.Color.HSBtoRGB(hsv[0], Math.max(0.4f, hsv[1]), 1.0f) & 0xFFFFFF);
+        context.blit(RenderPipelines.GUI_TEXTURED, LOCATOR_DOT.get(), x + Minecraft.getInstance().font.width(content.get(0)) + 13, y + TooltipRenderUtil.PADDING_TOP, 0, 0, 8, 8, 9, 9, rgbout);
     }
 
     // Improved drawLine
