@@ -377,29 +377,31 @@ public class PVCMapperModClient implements ClientModInitializer {
                     isInPVC = false; // Prevent sending ranks when not in server
                 }
                 minimap.isLoadingIn = false;
-            }
-
-            if (Minecraft.getInstance().player == null || Minecraft.getInstance().level == null) return;
-
-            int x = Minecraft.getInstance().player.getBlockX();
-            int z = Minecraft.getInstance().player.getBlockZ();
-
-            // Start up area popups
-            for (int i = 0; i < this.shortAreas.length; i++) {
-                if (
-                    this.shortAreas[i].dimension.equals(minimap.getDimensionNID()) &&
-                    this.shortAreas[i].maxX > x &&
-                    this.shortAreas[i].maxY > z &&
-                    this.shortAreas[i].minX < x &&
-                    this.shortAreas[i].minY < z &&
-                    this.shortAreas[i].polygon.contains(x, z)
-                ) {
-                    if (insideIDs.contains(this.shortAreas[i].id)) continue;
-                    if (sp.showWelcomePopup) CompatUtils.addToast(new WelcomeToast(Component.literal("Welcome to:"), Component.literal(this.shortAreas[i].name)));
-                    insideIDs.add(this.shortAreas[i].id);
-                } else {
-                    if(insideIDs.remove(Integer.valueOf(this.shortAreas[i].id))) {
-                        if (sp.showLeavingPopup) CompatUtils.addToast(new WelcomeToast( Component.literal("Now leaving:"), Component.literal(this.shortAreas[i].name)));
+            } 
+            if(inLevelTicks % 20 == 0) {
+                // Update less! :)
+                if (Minecraft.getInstance().player == null || Minecraft.getInstance().level == null) return;
+    
+                int x = Minecraft.getInstance().player.getBlockX();
+                int z = Minecraft.getInstance().player.getBlockZ();
+    
+                // Start up area popups
+                for (int i = 0; i < this.shortAreas.length; i++) {
+                    if (
+                        this.shortAreas[i].dimension.equals(minimap.getDimensionNID()) &&
+                        this.shortAreas[i].maxX > x &&
+                        this.shortAreas[i].maxY > z &&
+                        this.shortAreas[i].minX < x &&
+                        this.shortAreas[i].minY < z &&
+                        this.shortAreas[i].polygon.contains(x, z)
+                    ) {
+                        if (insideIDs.contains(this.shortAreas[i].id)) continue;
+                        if (sp.showWelcomePopup) CompatUtils.addToast(new WelcomeToast(Component.literal("Welcome to:"), Component.literal(this.shortAreas[i].name)));
+                        insideIDs.add(this.shortAreas[i].id);
+                    } else {
+                        if(insideIDs.remove(Integer.valueOf(this.shortAreas[i].id))) {
+                            if (sp.showLeavingPopup) CompatUtils.addToast(new WelcomeToast( Component.literal("Now leaving:"), Component.literal(this.shortAreas[i].name)));
+                        }
                     }
                 }
             }
