@@ -22,9 +22,11 @@ import java.util.regex.Pattern;
 import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
 
+import larrytllama.pvcmappermod.Terra2MapUpload;
 import larrytllama.pvcmappermod.mixin.client.TabListMixin;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientChunkEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 //? if <26.1 {
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
@@ -75,6 +77,7 @@ public class PVCMapperModClient implements ClientModInitializer {
     public DirectionsProvider dp;
     public SettingsProvider sp;
     public PlayerFetchUtils pfu;
+    public Terra2MapUpload t2mu;
 
     public static PVCMapperModClient INSTANCE;
 
@@ -142,8 +145,13 @@ public class PVCMapperModClient implements ClientModInitializer {
     Entity lastInteractedEntity = null;
     long lastInteractTimestamp = 0;
 
+    public boolean isInPVC() {
+        return Minecraft.getInstance().getConnection().getServerData() != null && Minecraft.getInstance().getConnection().getServerData().ip.contains("peacefulvanilla.club");
+    }
+
     @Override
     public void onInitializeClient() {
+        // Maybe I'll make this a button for people to press or something
         INSTANCE = this;
         // Settings provider
         SettingsProvider sp = SettingsProvider.getInstance();
@@ -161,8 +169,17 @@ public class PVCMapperModClient implements ClientModInitializer {
         new MapperCmdHandler(pfu, this);
         this.pfu = pfu;
 
+        this.t2mu = new Terra2MapUpload();
+        // (ClientLevel, LevelChunk)
+        ClientChunkEvents.CHUNK_LOAD.register((level, chunk) -> {
+            if(sp.collectData && isInPVC() && minimap.isInTerra2 && CompatUtils.getIdentifier(Minecraft.getInstance().level.dimension()).getPath() == "overworld") {  
+                pfu.publishTerra2Chunk(t2mu.getChunkData(chunk));
+            }
+        });
+
+
         UseEntityCallback.EVENT.register((player, world, hand, entity, hitResult) -> {
-            if(sp.collectData) {
+            if(sp.collectData && isInPVC()) {
                 lastInteractedEntity = entity;
                 lastInteractTimestamp = System.currentTimeMillis();
             }
@@ -170,7 +187,7 @@ public class PVCMapperModClient implements ClientModInitializer {
         });
         
         ScreenEvents.AFTER_INIT.register((client, screen, w, h) -> {
-            if(screen instanceof MerchantScreen merchantScreen && sp.collectData) {
+            if(screen instanceof MerchantScreen merchantScreen && sp.collectData && isInPVC()) {
                 if(lastInteractedEntity != null && (System.currentTimeMillis() - lastInteractTimestamp < 2000)) {
                     AtomicBoolean processed = new AtomicBoolean(); // Thread-safe cos it might run in another one
                     // Trades come after the shop menu instruction for some reason

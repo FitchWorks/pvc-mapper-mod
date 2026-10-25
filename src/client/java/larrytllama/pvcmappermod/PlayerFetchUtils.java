@@ -8,7 +8,10 @@ import java.net.URI;
 import java.net.http.HttpRequest.BodyPublisher;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Timer;
+import java.util.TimerTask;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -85,6 +88,45 @@ public class PlayerFetchUtils {
             System.out.println(e);
         }
     }
+
+    // Limit chunk updates 
+    ArrayList<ChunkData> chunkBatch = new ArrayList<ChunkData>();
+    Timer t = new java.util.Timer();
+    boolean isScheduled = false;
+    public void publishTerra2Chunk(ChunkData chunk) {
+        if(chunk == null) return;
+        System.out.println("Adding chunk to batch. Chunk at:" + String.format("%d, %d", chunk.chunkX, chunk.chunkZ));
+        chunkBatch.add(chunk);
+        if(!isScheduled) {
+            Runnable ut2b = this.uploadTerra2Batch;
+            t.schedule(new TimerTask() {
+                @Override 
+                public void run() {
+                    ut2b.run();
+                    isScheduled = false;
+                }
+            }, 30000);
+            isScheduled = true;
+        }
+    }
+
+    private Runnable uploadTerra2Batch = () -> {
+        try {
+            System.out.println("Sending T2 tile batch...");
+            java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder()
+                .uri(new URI(NetworkUtils.BASE_URL + "/maps/api/upload"))
+                .header("Content-Type", "application/json")
+                .POST(java.net.http.HttpRequest.BodyPublishers.ofString(new Gson().toJson(chunkBatch)))
+                .build();
+            NetworkUtils.HTTP_CLIENT.sendAsync(request, java.net.http.HttpResponse.BodyHandlers.ofString()).thenAccept((res) -> {
+                System.out.println("Tile request sent. Received status: " + res.statusCode());
+                chunkBatch.clear();
+            });
+        } catch(Exception e) {
+            System.out.println("Couldn't publish Terra2 tiles...");
+            System.out.println(e);
+        }
+    };
 
     private int errorCount;
     public boolean isUpdating = false;
