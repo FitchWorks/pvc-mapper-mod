@@ -174,8 +174,10 @@ public class PlayerFetchUtils {
                             });
                     } catch (Exception e) {
                         errorCount += 1;
-                        showToast("PVC Mapper Error", "Couldn't connect to PVC Mapper. Run /mapper retryupdates To try again.");
-                        stopUpdates();
+                        if(errorCount == 3) {
+                            showToast("PVC Mapper Error", "Couldn't connect to PVC Mapper. Run /mapper retryupdates To try again.");
+                            stopUpdates();
+                        }
                         LogUtils.error("Failed to fetch players from PVC Mapper!", e);
                     }
                 },
