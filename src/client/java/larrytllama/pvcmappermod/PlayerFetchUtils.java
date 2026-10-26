@@ -93,7 +93,9 @@ public class PlayerFetchUtils {
     ArrayList<ChunkData> chunkBatch = new ArrayList<ChunkData>();
     Timer t = new java.util.Timer();
     boolean isScheduled = false;
-    public void publishTerra2Chunk(ChunkData chunk) {
+    String token = "";
+    public void publishTerra2Chunk(ChunkData chunk, String newtoken) {
+        token = newtoken;
         if(chunk == null) return;
         System.out.println("Adding chunk to batch. Chunk at:" + String.format("%d, %d", chunk.chunkX, chunk.chunkZ));
         chunkBatch.add(chunk);
@@ -113,8 +115,9 @@ public class PlayerFetchUtils {
     private Runnable uploadTerra2Batch = () -> {
         try {
             System.out.println("Sending T2 tile batch...");
+            if(token.trim() == "") return;
             java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder()
-                .uri(new URI(NetworkUtils.BASE_URL + "/maps/api/upload"))
+                .uri(new URI(NetworkUtils.BASE_URL + "/maps/api/upload/" + token.trim()))
                 .header("Content-Type", "application/json")
                 .POST(java.net.http.HttpRequest.BodyPublishers.ofString(new Gson().toJson(chunkBatch)))
                 .build();

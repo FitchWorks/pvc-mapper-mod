@@ -34,6 +34,7 @@ public class ClothConfigScreen extends Screen {
     private BooleanListEntry checkForUpdates;
     private BooleanListEntry useDarkTiles;
     private BooleanListEntry collectData;
+    private StringListEntry t2maptoken;
     private BooleanListEntry debugMode;
     private BooleanListEntry showNetworkLines;
     private StringListEntry mapTileSource;
@@ -65,6 +66,7 @@ public class ClothConfigScreen extends Screen {
             sp.checkForUpdates = this.checkForUpdates.getValue();
             sp.minimapScale = this.minimapScale.getValue() / 100.0;
             sp.collectData = this.collectData.getValue();
+            sp.t2maptoken = this.t2maptoken.getValue();
             sp.debugMode = this.debugMode.getValue();
             sp.hideMinimapNetworks = !this.showNetworkLines.getValue();
             sp.orwellMeter = this.orwellMeter.getValue();
@@ -136,6 +138,12 @@ public class ClothConfigScreen extends Screen {
             entryBuilder.startTextDescription(Component.literal("You'll always be alerted when you disconnect from the Mapper server.")).build()
         );
 
+        this.checkForUpdates = entryBuilder.startBooleanToggle(Component.literal("Check for Updates"), sp.checkForUpdates)
+            .setDefaultValue(true)
+            .setTooltip(Component.literal("Check for PVC Mapper Mod updates on Game Launch"), Component.literal("(Displays a non-intrusive popup in the top right to let you know!)"))
+            .build();
+        alertSettings.addEntry(this.checkForUpdates);
+        
         ConfigCategory filterSettings = builder.getOrCreateCategory(Component.literal("Filters"));
         this.showPlaces = entryBuilder.startBooleanToggle(Component.literal("Show Places"), sp.showPlaces)
             .setDefaultValue(true)
@@ -166,6 +174,46 @@ public class ClothConfigScreen extends Screen {
             entryBuilder.startTextDescription(Component.literal("You can also change these settings in the map menu by clicking the filters button.")).build()
         );
 
+        ConfigCategory uploadSettings = builder.getOrCreateCategory(Component.literal("Upload Settings"));
+        this.collectData = entryBuilder.startBooleanToggle(Component.literal("Enable Mapper Uploads"), sp.collectData)
+            .setDefaultValue(false)
+            .setTooltip(
+                Component.literal("Contribute to the PVC Mapper by uploading stuff as you play!"),
+                Component.literal("(The mod simply uploads the entries provided by the tab list)")
+            )
+            .build();
+        uploadSettings.addEntry(this.collectData);
+        
+        uploadSettings.addEntry(
+            entryBuilder.startTextDescription(
+                Component.literal("  ↳ What data is uploaded? ")
+                    .append(Component.literal("See Data Notice").withStyle(s -> s
+                        .withColor(ChatFormatting.AQUA)
+                        .withUnderlined(true)
+                        .withClickEvent(new ClickEvent.OpenUrl(URI.create("https://pvc.coolwebsite.uk/help/data-uploading")))
+                    ))
+            ).build()
+        );
+        
+        this.t2maptoken = entryBuilder.startStrField(Component.literal("T2 Map Token"), sp.t2maptoken)
+            .setTooltip(
+                Component.literal("Add a token to enable Terra2 tile uploads."),
+                Component.literal("Leave blank to disable tile uploads")
+            )
+            .build();
+        uploadSettings.addEntry(this.t2maptoken);
+        
+        uploadSettings.addEntry(
+            entryBuilder.startTextDescription(
+                Component.literal("  ↳ Get your token from the editor! Sign in, click at the top right, then 'Tokens'")
+                    .append(Component.literal("Open Mapper Editor").withStyle(s -> s
+                        .withColor(ChatFormatting.AQUA)
+                        .withUnderlined(true)
+                        .withClickEvent(new ClickEvent.OpenUrl(URI.create("https://pvc.coolwebsite.uk/create/v2")))
+                    ))
+            ).build()
+        );
+
         ConfigCategory miscSettings = builder.getOrCreateCategory(Component.literal("Miscellaneous Settings"));
         this.orwellMeter = entryBuilder.startEnumSelector(Component.literal("Orwell Mute Mode"), OrwellianMeter.class, sp.orwellMeter)
             .setDefaultValue(OrwellianMeter.ALL)
@@ -193,54 +241,29 @@ public class ClothConfigScreen extends Screen {
             .setTooltip(Component.literal("Choose where the big map opens to!"), Component.literal("CENTRE_ON_PLAYER = Open to you"), Component.literal("CENTRE_ON_SPAWN = Open to spawn"), Component.literal("Note: The map will re-open to your last dragged location."))
             .build();
         miscSettings.addEntry(this.bigMapPos);
-        this.checkForUpdates = entryBuilder.startBooleanToggle(Component.literal("Check for Updates"), sp.checkForUpdates)
-            .setDefaultValue(true)
-            .setTooltip(Component.literal("Check for PVC Mapper Mod updates on Game Launch"), Component.literal("(Displays a non-intrusive popup in the top right to let you know!)"))
-            .build();
-        miscSettings.addEntry(this.checkForUpdates);
-        this.collectData = entryBuilder.startBooleanToggle(Component.literal("Enable Mapper Uploads"), sp.collectData)
-            .setDefaultValue(false)
-            .setTooltip(
-                Component.literal("Contribute to the PVC Mapper by uploading ranks and player nicknames!"),
-                Component.literal("(The mod simply uploads the entries provided by the tab list)")
-            )
-            .build();
-        miscSettings.addEntry(this.collectData);
-
-        miscSettings.addEntry(
-            entryBuilder.startTextDescription(
-                Component.literal("  ↳ What data is uploaded? ")
-                    .append(Component.literal("See Data Notice").withStyle(s -> s
-                        .withColor(ChatFormatting.AQUA)
-                        .withUnderlined(true)
-                        .withClickEvent(new ClickEvent.OpenUrl(URI.create("https://pvc.coolwebsite.uk/help/data-uploading")))
-                    ))
-            ).build()
-        );
-
+        
         this.showWelcomeScreen = entryBuilder.startBooleanToggle(Component.literal("Show Welcome Screen on Next Connect"), !sp.shownDataNotice)
-            .setDefaultValue(false)
-            .setTooltip(Component.literal("Re-display the welcome notice and keybind reminders next time you connect to PVC."))
+        .setDefaultValue(false)
+        .setTooltip(Component.literal("Re-display the welcome notice and keybind reminders next time you connect to PVC."))
             .build();
         miscSettings.addEntry(this.showWelcomeScreen);
         
         this.showInOtherPlaces = entryBuilder.startBooleanToggle(Component.literal("Show mod features elsewhere"), sp.showInOtherPlaces)
-            .setDefaultValue(false)
-            .setTooltip(Component.literal("Enables or disables all mapper mod features in servers or worlds other than PVC."), Component.literal("NOTE: You will need to rejoin PVC or install Mod Menu to change settings from another server with this set to False."))
-            .build();
+        .setDefaultValue(false)
+        .setTooltip(Component.literal("Enables or disables all mapper mod features in servers or worlds other than PVC."), Component.literal("NOTE: You will need to rejoin PVC or install Mod Menu to change settings from another server with this set to False."))
+        .build();
         miscSettings.addEntry(this.showInOtherPlaces);
         
         this.debugMode = entryBuilder.startBooleanToggle(Component.literal("Debug Mode"), sp.debugMode)
-            .setDefaultValue(false)
-            .setTooltip(Component.literal("Adds extra logging in the console."))
-            .build();
+        .setDefaultValue(false)
+        .setTooltip(Component.literal("Adds extra logging in the console."))
+        .build();
         miscSettings.addEntry(this.debugMode);
         
         miscSettings.addEntry(
             entryBuilder.startTextDescription(Component.literal("To change keybinds, head to Options > Controls > Keybinds and scroll down!")).build()
         );
-
-
+        
         return builder.build();
     }
 }
