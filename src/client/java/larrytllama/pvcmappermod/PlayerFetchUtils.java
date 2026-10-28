@@ -623,6 +623,39 @@ public class PlayerFetchUtils {
         }
     }
 
+    public CompletableFuture<SmallPlace> fetchNearestNetherPortal(int x, int z, String dimension) {
+        try {
+            if(dimension == null) dimension = "minecraft_" + CompatUtils.getIdentifier(Minecraft.getInstance().level.dimension()).getPath();
+            // I should prob change the error-case to be something that isn't 0.
+            // But then again, there's a portal *right* there.
+            // You'd need to be dumb to need to use the command there
+            if(x == 0) x = Minecraft.getInstance().player.getBlockX();
+            if(z == 0) z = Minecraft.getInstance().player.getBlockZ();
+
+            java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder()
+                .uri(new URI(String.format("%s/fetch/portalnearest/%d/%d/%s", NetworkUtils.API_V1, x, z, dimension)))
+                .GET().build();
+            LogUtils.debug("Fetching nearest portal to " + x + ", " + z + " from " + request.uri().toString());
+            return NetworkUtils.HTTP_CLIENT.sendAsync(request, java.net.http.HttpResponse.BodyHandlers.ofString())
+            .thenApply(response -> {
+                    String res = response.body();
+                    if(res.equals("null")) return new SmallPlace();
+                    Gson gson = new Gson();
+                    SmallPlace sp = gson.fromJson(res, SmallPlace.class);
+                    return sp;
+                })
+                .exceptionally(e -> {
+                    showToast("Mapper Connect Error", "Problem connecting, try again later!");
+                    LogUtils.error("Failed to fetch nearest portal from PVC Mapper!", e);
+                    return new SmallPlace();
+                });
+        } catch (Exception e) {
+            showToast("Mapper Connect Error", "Problem connecting, try again later!");
+            LogUtils.error("Failed to fetch nearest portal from PVC Mapper!", e);
+            return CompletableFuture.completedFuture(new SmallPlace());
+        }
+    }
+
     private double getScale() {
             return 1 / Math.pow(2, 8);
     }
@@ -978,4 +1011,16 @@ class ShortArea {
     double maxX;
     double maxY;
     Path2D polygon;
+}
+
+class SmallPlace {
+    int id;
+    String type;
+    String x; // Ew
+    String z; // Double ew
+    String dimension;
+    String name;
+    String createdAt;
+    String updatedAt;
+    String distance; // Ew combo
 }

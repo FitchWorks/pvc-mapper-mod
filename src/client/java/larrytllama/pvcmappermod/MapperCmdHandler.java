@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
 
+import com.mojang.brigadier.Command;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
@@ -280,14 +281,85 @@ public class MapperCmdHandler {
                     }
                 }))
             );
+
+            Command<FabricClientCommandSource> findportal = (context) -> {
+                try {
+                CompletableFuture.runAsync(() -> {
+                    String dim = null;
+                    int x = 0;
+                    int z = 0;
+                    try {
+                        x = IntegerArgumentType.getInteger(context, "x");
+                        z = IntegerArgumentType.getInteger(context, "z");
+                        dim = StringArgumentType.getString(context, "dimension");
+                    } catch(Exception e) {
+                        // Respectfully, ignore
+                    }
+                    if(dim == null || dim.isEmpty()) dim = modclient.minimap.isInTerra2 ? "minecraft_terra2" : "minecraft_" + CompatUtils.getIdentifier(Minecraft.getInstance().level.dimension()).getPath();
+                    // I validate x/z in the pfu
+                    System.out.println("Finding nearest nether portal...");
+                    pfu.fetchNearestNetherPortal(
+                        x, 
+                        z, 
+                        dim
+                    ).thenAccept(sp -> {
+                        if(sp == null) {
+                            Minecraft.getInstance().execute(() -> {
+                                context.getSource().sendFeedback(Component.literal("An unknown exception occurred when checking for the nearest portal\nAre you currently located on the moon?").withStyle(ChatFormatting.RED));
+                            });
+                        } else {
+                            Minecraft.getInstance().execute(() -> {
+                                context.getSource().sendFeedback(
+                                    Component.literal("")
+                                    .append(Component.literal("Your nearest portal is at...\n").setStyle(Style.EMPTY.withItalic(true).withColor(ChatFormatting.YELLOW)))
+                                    .append(Component.literal(String.format("X=%s, Z=%s ", sp.x, sp.z)).withStyle(Style.EMPTY.withBold(true)))
+                                    .append(Component.literal(String.format("(%d blocks away)\n", (int)Math.floor(Double.parseDouble(sp.distance)))).withStyle(Style.EMPTY.withColor(ChatFormatting.GRAY)))
+                                    .append(Component.literal(String.format("\"%s\"\n", sp.name)).withStyle(Style.EMPTY.withItalic(true)))
+                                    .append(Component.literal(String.format("Added: %s", sp.createdAt)).withStyle(Style.EMPTY.withColor(ChatFormatting.GREEN)))
+                                );
+                            });
+                        }
+                    });
+                });
+                return 1;
+                } catch(Exception e) {
+                    Minecraft.getInstance().execute(() -> {
+                        context.getSource().sendFeedback(Component.literal("An unknown exception occurred when checking for the nearest portal\nAre you currently located on the moon?").withStyle(ChatFormatting.RED));
+                    });
+                    System.out.println(e);
+                    e.printStackTrace();;
+                    return 1;
+                }
+            };
+
+            dispatcher.register(
+                ClientCommandManager.literal("findportal")
+                    .executes(findportal) // If you want /findportal by itself
+                    .then(ClientCommandManager.argument("x", IntegerArgumentType.integer())
+                        .then(ClientCommandManager.argument("z", IntegerArgumentType.integer())
+                            .executes(findportal) // /findportal <x> <z>
+                            .then(ClientCommandManager.argument("dimension", StringArgumentType.string())
+                                .suggests((context, builder) -> {
+                                    for (String dim : List.of("minecraft_overworld", "minecraft_the_nether", "minecraft_terra2")) {
+                                        builder.suggest(dim);
+                                    }
+                                    return builder.buildFuture();
+                                })
+                                .executes(findportal) // /findportal <x> <z> <dimension>
+                            )
+                        )
+                    )
+            );
         });
     }
 
     private void sendHelpFeedback(com.mojang.brigadier.context.CommandContext<net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource> context) {
         context.getSource().sendFeedback(
-            Component.literal("Commands List\n")
+            Component.literal("Mapper Mod Commands List\n")
             .append(Component.literal("/afksince <player>").setStyle(Style.EMPTY.withColor(ChatFormatting.YELLOW))
                 .append(Component.literal(" - Find how long a player has been AFK\n").setStyle(Style.EMPTY.withColor(ChatFormatting.WHITE)))
+            ).append(Component.literal("/findportal [<x> <z> [dimension]]").setStyle(Style.EMPTY.withColor(ChatFormatting.YELLOW))
+                .append(Component.literal(" - Find the nearest portal (enter command with parameters to use your current location)\n").setStyle(Style.EMPTY.withColor(ChatFormatting.WHITE)))
             ).append(Component.literal("/search [query]").setStyle(Style.EMPTY.withColor(ChatFormatting.YELLOW))
                 .append(Component.literal(" - Search the entire PVC Mapper!\n").setStyle(Style.EMPTY.withColor(ChatFormatting.WHITE)))
             ).append(Component.literal("/shops [item]").setStyle(Style.EMPTY.withColor(ChatFormatting.YELLOW))
@@ -306,17 +378,7 @@ public class MapperCmdHandler {
 
     public SuggestionProvider<FabricClientCommandSource> PLAYER_SUGGESTIONS = (context, builder) -> {
         String remaining = builder.getRemaining().toLowerCase(Locale.ROOT);
-        for (Item item : BuiltInRegistries.ITEM) {
-            ResIdentifier id = ResIdentifier.of(BuiltInRegistries.ITEM.getKey(item));
-            if (id != null) {
-                String path = id.getPath();
-                if (path.toLowerCase(Locale.ROOT).startsWith(remaining)) {
-                    String suggestion = path.toUpperCase(Locale.ROOT);
-                    builder.suggest(suggestion);
-                }
-            }
-        }
-        
+    
         List<PlayerFetch> players = this.pfu.getPlayers();
 
         for (PlayerFetch playerName : players) {
