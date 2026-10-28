@@ -172,7 +172,7 @@ public class PVCMapperModClient implements ClientModInitializer {
         this.t2mu = new Terra2MapUpload();
         // (ClientLevel, LevelChunk)
         ClientChunkEvents.CHUNK_LOAD.register((level, chunk) -> {
-            if(sp.collectData && isInPVC() && minimap.isInTerra2 && CompatUtils.getIdentifier(Minecraft.getInstance().level.dimension()).getPath() == "overworld") {  
+            if(sp.t2TileUploads && isInPVC() && minimap.isInTerra2 && CompatUtils.getIdentifier(Minecraft.getInstance().level.dimension()).getPath() == "overworld") {  
                 pfu.publishTerra2Chunk(t2mu.getChunkData(chunk), sp.t2maptoken);
             }
         });

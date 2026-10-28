@@ -34,6 +34,7 @@ public class ClothConfigScreen extends Screen {
     private BooleanListEntry checkForUpdates;
     private BooleanListEntry useDarkTiles;
     private BooleanListEntry collectData;
+    private BooleanListEntry t2TileUploads;
     private StringListEntry t2maptoken;
     private BooleanListEntry debugMode;
     private BooleanListEntry showNetworkLines;
@@ -187,14 +188,24 @@ public class ClothConfigScreen extends Screen {
         uploadSettings.addEntry(
             entryBuilder.startTextDescription(
                 Component.literal("  ↳ What data is uploaded? ")
-                    .append(Component.literal("See Data Notice").withStyle(s -> s
-                        .withColor(ChatFormatting.AQUA)
-                        .withUnderlined(true)
-                        .withClickEvent(new ClickEvent.OpenUrl(URI.create("https://pvc.coolwebsite.uk/help/data-uploading")))
-                    ))
+                .append(Component.literal("See Data Notice").withStyle(s -> s
+                    .withColor(ChatFormatting.AQUA)
+                    .withUnderlined(true)
+                    .withClickEvent(new ClickEvent.OpenUrl(URI.create("https://pvc.coolwebsite.uk/help/data-uploading")))
+                ))
             ).build()
         );
         
+        this.t2TileUploads = entryBuilder.startBooleanToggle(Component.literal("Enable Terra2 Tile Uploads"), sp.t2TileUploads)
+            .setDefaultValue(false)
+            .setTooltip(
+                Component.literal("Upload Terra2 Tiles to the PVC Mapper as you move around!"),
+                Component.literal("(Potato PC players on a dodgy connection may wish to keep this off for performance)"),
+                Component.literal("A valid token (see below) is required.")
+            )
+            .build();
+        uploadSettings.addEntry(this.t2TileUploads);
+
         this.t2maptoken = entryBuilder.startStrField(Component.literal("T2 Map Token"), sp.t2maptoken)
             .setTooltip(
                 Component.literal("Add a token to enable Terra2 tile uploads."),
