@@ -8,7 +8,10 @@ import java.net.URI;
 import java.net.http.HttpRequest.BodyPublisher;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Timer;
+import java.util.TimerTask;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -72,12 +75,70 @@ public class PlayerFetchUtils {
         }
     }
 
+    public void publishAdminShop(AdminShop as) {
+        try {
+            java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder()
+                .uri(new URI(NetworkUtils.API_V2 + "/shop-upload/setAdminShop?me="+Minecraft.getInstance().player.getGameProfile().name()))
+                .header("Content-Type", "application/json")
+                .POST(java.net.http.HttpRequest.BodyPublishers.ofString(new Gson().toJson(as)))
+                .build();
+            NetworkUtils.HTTP_CLIENT.sendAsync(request, java.net.http.HttpResponse.BodyHandlers.ofString());
+        } catch(Exception e) {
+            System.out.println("Couldn't publish admin shop...");
+            System.out.println(e);
+        }
+    }
+
+    // Limit chunk updates 
+    ArrayList<ChunkData> chunkBatch = new ArrayList<ChunkData>();
+    Timer t = new java.util.Timer();
+    boolean isScheduled = false;
+    String token = "";
+    public void publishTerra2Chunk(ChunkData chunk, String newtoken) {
+        token = newtoken;
+        if(chunk == null) return;
+        System.out.println("Adding chunk to batch. Chunk at:" + String.format("%d, %d", chunk.chunkX, chunk.chunkZ));
+        chunkBatch.add(chunk);
+        if(!isScheduled) {
+            Runnable ut2b = this.uploadTerra2Batch;
+            t.schedule(new TimerTask() {
+                @Override 
+                public void run() {
+                    ut2b.run();
+                    isScheduled = false;
+                }
+            }, 30000);
+            isScheduled = true;
+        }
+    }
+
+    private Runnable uploadTerra2Batch = () -> {
+        try {
+            System.out.println("Sending T2 tile batch...");
+            if(token.trim() == "") return;
+            java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder()
+                .uri(new URI(NetworkUtils.BASE_URL + "/maps/api/upload/" + token.trim()))
+                .header("Content-Type", "application/json")
+                .POST(java.net.http.HttpRequest.BodyPublishers.ofString(new Gson().toJson(chunkBatch)))
+                .build();
+            NetworkUtils.HTTP_CLIENT.sendAsync(request, java.net.http.HttpResponse.BodyHandlers.ofString()).thenAccept((res) -> {
+                System.out.println("Tile request sent. Received status: " + res.statusCode());
+                chunkBatch.clear();
+            });
+        } catch(Exception e) {
+            System.out.println("Couldn't publish Terra2 tiles...");
+            System.out.println(e);
+        }
+    };
+
     private int errorCount;
     public boolean isUpdating = false;
 
     public void startUpdates() {
         isUpdating = true;
-        scheduler = Executors.newSingleThreadScheduledExecutor();
+        scheduler = Executors.newSingleThreadScheduledExecutor(
+            Thread.ofPlatform().daemon().name("pvc-mapper-player-fetch").factory()
+        );
         scheduler.scheduleAtFixedRate(
                 () -> {
                     // Prevent loading when not needed
@@ -116,8 +177,10 @@ public class PlayerFetchUtils {
                             });
                     } catch (Exception e) {
                         errorCount += 1;
-                        showToast("PVC Mapper Error", "Couldn't connect to PVC Mapper. Run /mapper retryupdates To try again.");
-                        stopUpdates();
+                        if(errorCount == 3) {
+                            showToast("PVC Mapper Error", "Couldn't connect to PVC Mapper. Run /mapper retryupdates To try again.");
+                            stopUpdates();
+                        }
                         LogUtils.error("Failed to fetch players from PVC Mapper!", e);
                     }
                 },
@@ -560,6 +623,39 @@ public class PlayerFetchUtils {
         }
     }
 
+    public CompletableFuture<SmallPlace> fetchNearestNetherPortal(int x, int z, String dimension) {
+        try {
+            if(dimension == null) dimension = "minecraft_" + CompatUtils.getIdentifier(Minecraft.getInstance().level.dimension()).getPath();
+            // I should prob change the error-case to be something that isn't 0.
+            // But then again, there's a portal *right* there.
+            // You'd need to be dumb to need to use the command there
+            if(x == 0) x = Minecraft.getInstance().player.getBlockX();
+            if(z == 0) z = Minecraft.getInstance().player.getBlockZ();
+
+            java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder()
+                .uri(new URI(String.format("%s/fetch/portalnearest/%d/%d/%s", NetworkUtils.API_V1, x, z, dimension)))
+                .GET().build();
+            LogUtils.debug("Fetching nearest portal to " + x + ", " + z + " from " + request.uri().toString());
+            return NetworkUtils.HTTP_CLIENT.sendAsync(request, java.net.http.HttpResponse.BodyHandlers.ofString())
+            .thenApply(response -> {
+                    String res = response.body();
+                    if(res.equals("null")) return new SmallPlace();
+                    Gson gson = new Gson();
+                    SmallPlace sp = gson.fromJson(res, SmallPlace.class);
+                    return sp;
+                })
+                .exceptionally(e -> {
+                    showToast("Mapper Connect Error", "Problem connecting, try again later!");
+                    LogUtils.error("Failed to fetch nearest portal from PVC Mapper!", e);
+                    return new SmallPlace();
+                });
+        } catch (Exception e) {
+            showToast("Mapper Connect Error", "Problem connecting, try again later!");
+            LogUtils.error("Failed to fetch nearest portal from PVC Mapper!", e);
+            return CompletableFuture.completedFuture(new SmallPlace());
+        }
+    }
+
     private double getScale() {
             return 1 / Math.pow(2, 8);
     }
@@ -915,4 +1011,16 @@ class ShortArea {
     double maxX;
     double maxY;
     Path2D polygon;
+}
+
+class SmallPlace {
+    int id;
+    String type;
+    String x; // Ew
+    String z; // Double ew
+    String dimension;
+    String name;
+    String createdAt;
+    String updatedAt;
+    String distance; // Ew combo
 }

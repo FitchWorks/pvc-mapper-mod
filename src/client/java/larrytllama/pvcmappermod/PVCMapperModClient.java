@@ -15,15 +15,18 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
 
+import larrytllama.pvcmappermod.Terra2MapUpload;
 import larrytllama.pvcmappermod.mixin.client.TabListMixin;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientChunkEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 //? if <26.1 {
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
@@ -31,12 +34,14 @@ import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 /*import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;*///?}
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
+import net.fabricmc.fabric.api.event.player.UseEntityCallback;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.PlayerTabOverlay;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.TitleScreen;
+import net.minecraft.client.gui.screens.inventory.MerchantScreen;
 import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.client.multiplayer.PlayerInfo;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -49,8 +54,13 @@ import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.network.chat.Style;
 import net.minecraft.network.chat.contents.PlainTextContents.LiteralContents;
 import net.minecraft.network.chat.contents.TranslatableContents;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.level.block.Blocks;
+//?if >=26.1{
+/* import net.fabricmc.fabric.api.client.screen.v1.Screens; */
+//?}
 
 public class PVCMapperModClient implements ClientModInitializer {
     public Category MOD_CATEGORY = Category.register(ResIdentifier.of("pvcmappermod", "category").get());
@@ -67,6 +77,7 @@ public class PVCMapperModClient implements ClientModInitializer {
     public DirectionsProvider dp;
     public SettingsProvider sp;
     public PlayerFetchUtils pfu;
+    public Terra2MapUpload t2mu;
 
     public static PVCMapperModClient INSTANCE;
 
@@ -131,9 +142,16 @@ public class PVCMapperModClient implements ClientModInitializer {
 
 
     boolean wasInPortal = false;
+    Entity lastInteractedEntity = null;
+    long lastInteractTimestamp = 0;
+
+    public boolean isInPVC() {
+        return Minecraft.getInstance().getConnection().getServerData() != null && Minecraft.getInstance().getConnection().getServerData().ip.contains("peacefulvanilla.club");
+    }
 
     @Override
     public void onInitializeClient() {
+        // Maybe I'll make this a button for people to press or something
         INSTANCE = this;
         // Settings provider
         SettingsProvider sp = SettingsProvider.getInstance();
@@ -151,7 +169,41 @@ public class PVCMapperModClient implements ClientModInitializer {
         new MapperCmdHandler(pfu, this);
         this.pfu = pfu;
 
+        this.t2mu = new Terra2MapUpload();
+        // (ClientLevel, LevelChunk)
+        ClientChunkEvents.CHUNK_LOAD.register((level, chunk) -> {
+            if(sp.t2TileUploads && isInPVC() && minimap.isInTerra2 && CompatUtils.getIdentifier(Minecraft.getInstance().level.dimension()).getPath() == "overworld") {  
+                pfu.publishTerra2Chunk(t2mu.getChunkData(chunk), sp.t2maptoken);
+            }
+        });
+
+
+        UseEntityCallback.EVENT.register((player, world, hand, entity, hitResult) -> {
+            if(sp.collectData && isInPVC()) {
+                lastInteractedEntity = entity;
+                lastInteractTimestamp = System.currentTimeMillis();
+            }
+            return InteractionResult.PASS;
+        });
+        
         ScreenEvents.AFTER_INIT.register((client, screen, w, h) -> {
+            if(screen instanceof MerchantScreen merchantScreen && sp.collectData && isInPVC()) {
+                if(lastInteractedEntity != null && (System.currentTimeMillis() - lastInteractTimestamp < 2000)) {
+                    AtomicBoolean processed = new AtomicBoolean(); // Thread-safe cos it might run in another one
+                    // Trades come after the shop menu instruction for some reason
+                    // Add a pre-render check to see if the trades are there yet
+                    ScreenEvents.afterTick(merchantScreen)
+                    .register((scr) -> { 
+                        if(processed.get()) return;
+                        if(merchantScreen.getMenu().getOffers() != null && !merchantScreen.getMenu().getOffers().isEmpty()) {
+                            AdminShop as = ShopsHandler.decodeShops(merchantScreen, lastInteractedEntity);
+                            pfu.publishAdminShop(as);
+                            processed.set(true);
+                        }
+                    });
+                }
+            }
+
             if (!seenMainMenu && screen instanceof Screen) {
                 seenMainMenu = true;
                 // Check for updates
@@ -166,7 +218,10 @@ public class PVCMapperModClient implements ClientModInitializer {
         this.minimap = Minimap.attach(pfu, sp, dp);
 
         HttpClient http = HttpClient.newHttpClient();
-        ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
+        // A daemon thread factory prevents background uploads from being force-killed by JVM when you exit the game
+        ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(
+            Thread.ofPlatform().daemon().name("pvc-mapper-rank-upload").factory()
+        );
         scheduler.scheduleAtFixedRate(() -> {
             if(sp.collectData) {
                 CompletableFuture.runAsync(() -> {
@@ -322,29 +377,31 @@ public class PVCMapperModClient implements ClientModInitializer {
                     isInPVC = false; // Prevent sending ranks when not in server
                 }
                 minimap.isLoadingIn = false;
-            }
-
-            if (Minecraft.getInstance().player == null || Minecraft.getInstance().level == null) return;
-
-            int x = Minecraft.getInstance().player.getBlockX();
-            int z = Minecraft.getInstance().player.getBlockZ();
-
-            // Start up area popups
-            for (int i = 0; i < this.shortAreas.length; i++) {
-                if (
-                    this.shortAreas[i].dimension.equals(minimap.getDimensionNID()) &&
-                    this.shortAreas[i].maxX > x &&
-                    this.shortAreas[i].maxY > z &&
-                    this.shortAreas[i].minX < x &&
-                    this.shortAreas[i].minY < z &&
-                    this.shortAreas[i].polygon.contains(x, z)
-                ) {
-                    if (insideIDs.contains(this.shortAreas[i].id)) continue;
-                    if (sp.showWelcomePopup) CompatUtils.addToast(new WelcomeToast(Component.literal("Welcome to:"), Component.literal(this.shortAreas[i].name)));
-                    insideIDs.add(this.shortAreas[i].id);
-                } else {
-                    if(insideIDs.remove(Integer.valueOf(this.shortAreas[i].id))) {
-                        if (sp.showLeavingPopup) CompatUtils.addToast(new WelcomeToast( Component.literal("Now leaving:"), Component.literal(this.shortAreas[i].name)));
+            } 
+            if(inLevelTicks % 20 == 0) {
+                // Update less! :)
+                if (Minecraft.getInstance().player == null || Minecraft.getInstance().level == null) return;
+    
+                int x = Minecraft.getInstance().player.getBlockX();
+                int z = Minecraft.getInstance().player.getBlockZ();
+    
+                // Start up area popups
+                for (int i = 0; i < this.shortAreas.length; i++) {
+                    if (
+                        this.shortAreas[i].dimension.equals(minimap.getDimensionNID()) &&
+                        this.shortAreas[i].maxX > x &&
+                        this.shortAreas[i].maxY > z &&
+                        this.shortAreas[i].minX < x &&
+                        this.shortAreas[i].minY < z &&
+                        this.shortAreas[i].polygon.contains(x, z)
+                    ) {
+                        if (insideIDs.contains(this.shortAreas[i].id)) continue;
+                        if (sp.showWelcomePopup) CompatUtils.addToast(new WelcomeToast(Component.literal("Welcome to:"), Component.literal(this.shortAreas[i].name)));
+                        insideIDs.add(this.shortAreas[i].id);
+                    } else {
+                        if(insideIDs.remove(Integer.valueOf(this.shortAreas[i].id))) {
+                            if (sp.showLeavingPopup) CompatUtils.addToast(new WelcomeToast( Component.literal("Now leaving:"), Component.literal(this.shortAreas[i].name)));
+                        }
                     }
                 }
             }
@@ -403,8 +460,6 @@ public class PVCMapperModClient implements ClientModInitializer {
 
     // Crawl through a string and add hover details to player names
     private Component addPlayerDetailsToChat(Component message) {
-        System.out.println("node: " + message.getString());
-        System.out.println("style: " + message.getStyle());
         MutableComponent out = Component.empty(); // Start with empty message
         // Don't override existing hovering
         if (out.getStyle().getHoverEvent() == null) {
@@ -474,15 +529,12 @@ public class PVCMapperModClient implements ClientModInitializer {
             // Helpfully, PVC's chat system adds this in for anti-chat reporting. Thank you Nem <3
             // P.S Please don't change it
             if(translatable.getKey().equals("%s")) { 
-                System.out.println(message);
                 return addPlayerDetailsToChat(message);
             }
         }
         
-        System.out.println("Original: "+message);
         if(sp.orwellMeter == OrwellianMeter.ALL) {
             Component out = message;
-            System.out.println(out);
             return out;
         }
         // Orwell message types:
@@ -499,6 +551,8 @@ public class PVCMapperModClient implements ClientModInitializer {
             if(pfu.omc == null) return message;
             for (int i = 0; i < pfu.omc.length; i++) {
                 if(pfu.omc[i] == null || pfu.omc[i].includes == null) continue;
+                if(sp.orwellMeter == OrwellianMeter.SMART && pfu.omc[i].replacewith == null) continue;
+                if(sp.orwellMeter == OrwellianMeter.ANGY && pfu.omc[i].angyreplace == null) continue;
                 String otherplayer = "player";
                 if(text.contains(pfu.omc[i].includes)) {
                     for (String word : text.split("\\s+")) {
@@ -508,7 +562,6 @@ public class PVCMapperModClient implements ClientModInitializer {
                         }
                     }
                     if(sp.orwellMeter == OrwellianMeter.SMART) {
-                        if(pfu.omc[i].replacewith == null) continue;
                         String outputtext = pfu.omc[i].replacewith
                             .replaceAll("%player%", Minecraft.getInstance().player.getPlainTextName())
                             .replaceAll("%otherplayer%", otherplayer);
@@ -518,7 +571,6 @@ public class PVCMapperModClient implements ClientModInitializer {
                             return Component.literal(outputtext).withStyle(Style.EMPTY.withColor(ChatFormatting.DARK_GRAY).withItalic(true).withHoverEvent(new HoverEvent.ShowText(Component.literal("Original message content:\n").append(message))));
                         }
                     } else if(sp.orwellMeter == OrwellianMeter.ANGY) {
-                        if(pfu.omc[i].angyreplace == null) continue;
                         String outputtext = pfu.omc[i].angyreplace
                             .replaceAll("%player%", Minecraft.getInstance().player.getPlainTextName())
                             .replaceAll("%otherplayer%", otherplayer);
@@ -526,7 +578,7 @@ public class PVCMapperModClient implements ClientModInitializer {
                     }
                 } else if(sp.orwellMeter == OrwellianMeter.ANGY) {
                     String outputtext = pfu.omc[i].angyreplace
-                        .replaceAll("%player", Minecraft.getInstance().player.getPlainTextName())
+                        .replaceAll("%player%", Minecraft.getInstance().player.getPlainTextName())
                         .replaceAll("%otherplayer%", otherplayer);
                     return orwellMessagePrefixes[applicablePrefix].append(Component.literal(outputtext).withStyle(Style.EMPTY)).withStyle(Style.EMPTY.withHoverEvent(new HoverEvent.ShowText(Component.literal("Modified by PVC Mapper Mod\nOriginal message content:\n").append(message))));
                 }

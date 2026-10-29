@@ -39,6 +39,8 @@ public class SettingsProvider {
     public BigMapPos bigMapPos = BigMapPos.CENTRE_ON_PLAYER;
 
     public boolean collectData = false;
+    public String t2maptoken = "";
+    public boolean t2TileUploads = false;
     
     public boolean debugMode = false;
     
@@ -82,6 +84,8 @@ public class SettingsProvider {
                 if(settingsFromFile.bigMapPos != null) bigMapPos = settingsFromFile.bigMapPos;
                 checkForUpdates = settingsFromFile.checkForUpdates;
                 collectData = settingsFromFile.collectData;
+                t2TileUploads = settingsFromFile.t2TileUploads;
+                if(settingsFromFile.t2maptoken != null) t2maptoken = settingsFromFile.t2maptoken;
                 debugMode = settingsFromFile.debugMode;
                 hideMinimapNetworks = settingsFromFile.hideMinimapNetworks;
                 if(settingsFromFile.orwellMeter != null) orwellMeter = settingsFromFile.orwellMeter;
@@ -126,6 +130,8 @@ public class SettingsProvider {
         settingsToSet.bigMapPos = bigMapPos;
         settingsToSet.checkForUpdates = checkForUpdates;
         settingsToSet.collectData = collectData;
+        settingsToSet.t2TileUploads = t2TileUploads;
+        settingsToSet.t2maptoken = t2maptoken;
         settingsToSet.debugMode = debugMode;
         settingsToSet.hideMinimapNetworks = hideMinimapNetworks;
         settingsToSet.orwellMeter = orwellMeter;
@@ -163,6 +169,8 @@ class SettingsJSON {
     BigMapPos bigMapPos = BigMapPos.CENTRE_ON_PLAYER;
     boolean checkForUpdates = true;
     boolean collectData = false;
+    boolean t2TileUploads = false;
+    String t2maptoken = "";
     boolean debugMode = false;
     boolean hideMinimapNetworks = false;
     OrwellianMeter orwellMeter = OrwellianMeter.SMART;

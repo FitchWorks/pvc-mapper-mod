@@ -2,6 +2,7 @@ package larrytllama.pvcmappermod;
 
 import larrytllama.pvcmappermod.utils.*;
 
+import java.awt.Color;
 import java.awt.geom.Line2D;
 import java.awt.geom.Rectangle2D;
 import java.net.URI;
@@ -17,6 +18,7 @@ import java.util.concurrent.CompletableFuture;
 import org.jetbrains.annotations.Nullable;
 
 import com.google.gson.Gson;
+import com.mojang.blaze3d.systems.RenderSystem;
 
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.VanillaHudElements;
@@ -187,6 +189,9 @@ public class Minimap {
     public static final ResIdentifier MAP_BG = ResIdentifier.of("minecraft",
             "textures/gui/menu_background.png");
 
+    public static final ResIdentifier LOCATOR_DOT = ResIdentifier.of("minecraft",
+            "textures/gui/sprites/hud/locator_bar_dot/default_1.png");
+
     public String prettyDimensionName(String dimension) {
         switch (dimension) {
             case "minecraft_overworld":
@@ -245,7 +250,7 @@ public class Minimap {
         });
     }
 
-    private void renderMinimapTooltipPlayer(/*? if <26.1 {*/GuiGraphics/*?} else {*//*GuiGraphicsExtractor*//*?}*/ context, List<String> text) {
+    private void renderMinimapTooltipPlayer(/*? if <26.1 {*/GuiGraphics/*?} else {*//*GuiGraphicsExtractor*//*?}*/ context, List<String> text, String uuid) {
         List<String> tooltipText = text;
         int lines = tooltipText.size();
         Font mcfont = Minecraft.getInstance().font;
@@ -268,6 +273,11 @@ public class Minimap {
 
         context.blit(RenderPipelines.GUI_TEXTURED, playerTooltipSkin.get(), tooltipX + mcfont.width(text.get(0)) + 1, 8, 8, 8, 8, 8, 64, 64);
         context.blit(RenderPipelines.GUI_TEXTURED, playerTooltipSkin.get(), tooltipX + mcfont.width(text.get(0)) + 1, 8, 40, 8, 8, 8, 64, 64 );
+
+        int hashed = UUID.fromString(uuid.replaceFirst("(\\p{XDigit}{8})(\\p{XDigit}{4})(\\p{XDigit}{4})(\\p{XDigit}{4})(\\p{XDigit}{12})", "$1-$2-$3-$4-$5")).hashCode();
+        float[] hsv = Color.RGBtoHSB((hashed >> 16) & 0xFF, (hashed >> 8) & 0xFF, hashed & 0xFF, null);
+        int rgbout = 0xFF000000 | (Color.HSBtoRGB(hsv[0], Math.max(0.4f, hsv[1]), 1.0f) & 0xFFFFFF);
+        context.blit(RenderPipelines.GUI_TEXTURED, LOCATOR_DOT.get(), tooltipX + mcfont.width(text.get(0)) + 11, 8, 0, 0, 8, 8, 9, 9, rgbout);
     }
 
     private String lastDimension = "";
@@ -715,7 +725,7 @@ public class Minimap {
                                         ((Instant.now().toEpochMilli() - Instant.parse(player.afksince).toEpochMilli()) / 60000) > 2 
                                         ? String.format("AFK for %d mins", (Instant.now().toEpochMilli() - Instant.parse(player.afksince).toEpochMilli()) / 60000)
                                         : "Currently Active"
-                                )
+                                ), player.uuid
                             );
                         }
                     }
