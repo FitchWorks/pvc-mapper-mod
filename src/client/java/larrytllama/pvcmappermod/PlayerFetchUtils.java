@@ -8,8 +8,6 @@ import java.net.URI;
 import java.net.http.HttpRequest.BodyPublisher;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Timer;
-import java.util.TimerTask;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
@@ -70,8 +68,7 @@ public class PlayerFetchUtils {
                 .build();
             NetworkUtils.HTTP_CLIENT.sendAsync(request, java.net.http.HttpResponse.BodyHandlers.ofString());
         } catch(Exception e) {
-            System.out.println("Couldn't publish nether portal...");
-            System.out.println(e);
+            LogUtils.error("Couldn't publish nether portal...", e);
         }
     }
 
@@ -84,52 +81,42 @@ public class PlayerFetchUtils {
                 .build();
             NetworkUtils.HTTP_CLIENT.sendAsync(request, java.net.http.HttpResponse.BodyHandlers.ofString());
         } catch(Exception e) {
-            System.out.println("Couldn't publish admin shop...");
-            System.out.println(e);
+            LogUtils.error("Couldn't publish admin shop...", e);
         }
     }
 
     // Limit chunk updates 
     ArrayList<ChunkData> chunkBatch = new ArrayList<ChunkData>();
-    Timer t = new java.util.Timer();
-    boolean isScheduled = false;
     String token = "";
     public void publishTerra2Chunk(ChunkData chunk, String newtoken) {
         token = newtoken;
         if(chunk == null) return;
-        System.out.println("Adding chunk to batch. Chunk at:" + String.format("%d, %d", chunk.chunkX, chunk.chunkZ));
+        LogUtils.debug("Adding chunk to batch. Chunk at: %d, %d", chunk.chunkX, chunk.chunkZ);
         chunkBatch.add(chunk);
-        if(!isScheduled) {
-            Runnable ut2b = this.uploadTerra2Batch;
-            t.schedule(new TimerTask() {
-                @Override 
-                public void run() {
-                    ut2b.run();
-                    isScheduled = false;
-                }
-            }, 30000);
-            isScheduled = true;
-        }
     }
 
-    private Runnable uploadTerra2Batch = () -> {
+    public void uploadTerra2Batch() {
+        if(chunkBatch.isEmpty() || token.trim().isEmpty()) return;
+
         try {
-            System.out.println("Sending T2 tile batch...");
-            if(token.trim() == "") return;
+            LogUtils.debug("Sending T2 tile batch...");
             java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder()
                 .uri(new URI(NetworkUtils.BASE_URL + "/maps/api/upload/" + token.trim()))
                 .header("Content-Type", "application/json")
                 .POST(java.net.http.HttpRequest.BodyPublishers.ofString(new Gson().toJson(chunkBatch)))
                 .build();
+            chunkBatch.clear();
             NetworkUtils.HTTP_CLIENT.sendAsync(request, java.net.http.HttpResponse.BodyHandlers.ofString()).thenAccept((res) -> {
-                System.out.println("Tile request sent. Received status: " + res.statusCode());
-                chunkBatch.clear();
+                if(res.statusCode() == 200) {
+                    LogUtils.debug("Tile request sent. Received status: %d", res.statusCode());
+                } else {
+                    LogUtils.warn("Tile request sent. Received status: %d", res.statusCode());
+                }
             });
         } catch(Exception e) {
-            System.out.println("Couldn't publish Terra2 tiles...");
-            System.out.println(e);
+            LogUtils.error("Couldn't publish Terra2 tiles...", e);
         }
-    };
+    }
 
     private int errorCount;
     public boolean isUpdating = false;
@@ -188,17 +175,16 @@ public class PlayerFetchUtils {
                 1500, // Every 1.5s, the interval between updates on the mapper
                 TimeUnit.MILLISECONDS);
 
-        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
-            stopUpdates();
-        });
-
         // Hoy in the claims too because why not
         CompletableFuture.runAsync(() -> fetchClaims());
     }
 
     public void stopUpdates() {
         isUpdating = false;
-        scheduler.shutdownNow();
+        if (scheduler != null) {
+            scheduler.shutdownNow();
+        }
+        chunkBatch.clear();
     }
 
     public ArrayList<PlayerFetch> getPlayers() {
