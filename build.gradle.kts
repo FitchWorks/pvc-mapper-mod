@@ -40,14 +40,13 @@ dependencies {
 }
 
 tasks.processResources {
-    val modVersion = project.version.toString()
-    inputs.property("version", modVersion)
+    inputs.property("version", project.version)
 
     val mcDepVersion = project.findProperty("minecraft_version_dependency") as? String ?: "~${project.property("minecraft_version")}"
 
     filesMatching("fabric.mod.json") {
         expand(mutableMapOf(
-            "version" to modVersion,
+            "version" to project.version,
             "minecraft_dependency" to mcDepVersion
         ))
     }
@@ -64,10 +63,9 @@ java {
 }
 
 tasks.jar {
-    val archivesName = project.base.archivesName
-    inputs.property("archivesName", archivesName)
+    inputs.property("archivesName", project.base.archivesName)
     from(rootProject.file("LICENSE")) {
-        rename { "${it}_${archivesName.get()}" }
+        rename { "${it}_${inputs.properties["archivesName"]}" }
     }
 }
 
