@@ -2,14 +2,11 @@ package larrytllama.pvcmappermod;
 
 import larrytllama.pvcmappermod.utils.*;
 
-import java.io.FileNotFoundException;
 import java.lang.reflect.Type;
 import java.net.URI;
-import java.net.http.HttpRequest.BodyPublisher;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -266,18 +263,7 @@ public class PlayerFetchUtils {
     }
 
     public String prettyDimensionName(String dimension) {
-        switch (dimension) {
-            case "minecraft_overworld":
-                return "Overworld";
-            case "minecraft_the_nether":
-                return "Nether";
-            case "minecraft_the_end":
-                return "End";
-            case "minecraft_terra2":
-                return "Terra2";
-            default:
-                return "Unknown World";
-        }
+        return MapRenderUtils.prettyDimensionName(dimension);
     }
 
     public void fetchClaims() {

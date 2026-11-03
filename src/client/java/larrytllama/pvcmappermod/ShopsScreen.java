@@ -346,17 +346,17 @@ public class ShopsScreen extends Screen {
 
         graphics.pose().translate(
 
-                x + (width / 2)
+                (float) (x + (width / 2)
 
                         - MapRenderUtils.worldToLocalTileCoordinate(coordX, 512)
 
-                        - 512,
+                        - 512),
 
-                y + (height / 2)
+                (float) (y + (height / 2)
 
                         - MapRenderUtils.worldToLocalTileCoordinate(coordZ, 512)
 
-                        - 512);
+                        - 512));
 
         for (int iX = 0; iX < 3; iX++) {
 

@@ -27,9 +27,7 @@ public class TransportNetwork {
         return segments;
     }
 
-    public void recalculate(Network[] allNetworks, String currentDimension, int zoomlevel, int tileSizePx, double mapX, double mapZ, double mapWidth, double mapHeight, String source) {
-        int tilesize = 1 << (17 - zoomlevel);
-        double scale = (double) tileSizePx / tilesize;
+    public void recalculate(Network[] allNetworks, String currentDimension, int zoomlevel, double scale, double mapX, double mapZ, double mapWidth, double mapHeight, String source) {
 
         segments.clear();
         

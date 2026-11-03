@@ -1,7 +1,7 @@
 package larrytllama.pvcmappermod;
 
 import larrytllama.pvcmappermod.utils.*;
-import me.shedaniel.math.Color;
+
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.network.chat.MutableComponent;
@@ -16,16 +16,11 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
-import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.awt.Toolkit;
 import java.awt.datatransfer.StringSelection;
-import java.awt.geom.Line2D;
-import java.awt.geom.Rectangle2D;
 import java.time.Instant;
 
 import com.mojang.blaze3d.platform.InputConstants;
@@ -66,6 +61,7 @@ public class FullScreenMap extends Screen {
     );
     private boolean isMouseDown = false;
     public SettingsProvider sp;
+
     public Network[] allNetworks = new Network[0];
     public static FullScreenMap createScreen(Component title, PlayerFetchUtils pfu, SettingsProvider sp) {
         FullScreenMap fsm = new FullScreenMap(title);
@@ -95,10 +91,11 @@ public class FullScreenMap extends Screen {
     }
 
     public void navToCoords(int x, int z) {
+        updateDimensionButtons();
         int tilesize = 1 << (17 - zoomlevel);
         double scale = (double) minimapTileSize / tilesize;
-        this.x = (int)(x - ((this.width/2)/scale));
-        this.z = (int)(z - (((this.height - bottomMapOffset)/2)/scale));
+        this.x = x - ((this.width / 2.0) / scale);
+        this.z = z - (((this.height - bottomMapOffset) / 2.0) / scale);
         onMouseMove(this.x, this.z);
     }
 
@@ -249,15 +246,16 @@ public class FullScreenMap extends Screen {
     int bestContextMenuWidth = 0;
 
     public String getOppositeDimension(String dimension) {
-        switch (dimension) {
-            case "minecraft_overworld":
-                return "minecraft_the_nether";
-            case "minecraft_the_nether":
-            case "minecraft_terra2":
-                return "minecraft_overworld";
-            default:
-                return "minecraft_unknown";
+        String world = MapRenderUtils.getWorld(dimension);
+        boolean wantNether = MapRenderUtils.isOverworld(dimension);
+        boolean wantOverworld = MapRenderUtils.isNether(dimension);
+
+        if (!wantNether && !wantOverworld) return null;
+        for (String dim : MapRenderUtils.getWorldTilesets(world)) {
+            if (wantNether && MapRenderUtils.isNether(dim)) return dim;
+            if (wantOverworld && MapRenderUtils.isOverworld(dim)) return dim;
         }
+        return null;
     }
 
     @Override
@@ -279,9 +277,18 @@ public class FullScreenMap extends Screen {
                 contextMenuY = mbe.y();
                 contextMenuWorldX = (int) ((contextMenuX / scale) + x);
                 contextMenuWorldZ = (int) ((contextMenuY / scale) + z);
+                String oppositeDim = getOppositeDimension(currentDimension);
                 contextMenuItems.set(0, String.format("%d, %d", contextMenuWorldX, contextMenuWorldZ));
-                contextMenuItems.set(1, String.format("%d, %d in %s", (int) Math.floor(contextMenuWorldX/8), (int) Math.floor(contextMenuWorldZ/8), pfu.prettyDimensionName(getOppositeDimension(currentDimension))));
-                contextMenuItems.set(2, String.format("%d, %d in %s", contextMenuWorldX, contextMenuWorldZ, pfu.prettyDimensionName(currentDimension)));
+                if (oppositeDim != null) {
+                    double oppositeScale = MapRenderUtils.getDimensionScale(currentDimension, oppositeDim);
+                    // round (floor) to int for display
+                    int oppositeX = (int) Math.floor(contextMenuWorldX * oppositeScale);
+                    int oppositeZ = (int) Math.floor(contextMenuWorldZ * oppositeScale);
+                    contextMenuItems.set(1, String.format("%d, %d in %s", oppositeX, oppositeZ, MapRenderUtils.prettyDimensionName(oppositeDim)));
+                } else {
+                    contextMenuItems.set(1, "No linked dimension");
+                }
+                contextMenuItems.set(2, String.format("%d, %d in %s", contextMenuWorldX, contextMenuWorldZ, MapRenderUtils.prettyDimensionName(currentDimension)));
                 for (int i = 0; i < contextMenuItems.size(); i++) {
                     bestContextMenuWidth = Math.max(bestContextMenuWidth, font.width(contextMenuItems.get(i))) + 2;
                 }
@@ -300,8 +307,8 @@ public class FullScreenMap extends Screen {
                                 ), null);
                             } else if(i==4) ConfirmLinkScreen.confirmLinkNow(null, URI.create(String.format("%s?x=%d&z=%d&dimension=%s", NetworkUtils.BASE_URL, contextMenuWorldX, contextMenuWorldZ, currentDimension)));
                             else if(i==5) {
-                                x = (int) (contextMenuWorldX-(this.width / scale) / 2);
-                                z = (int) (contextMenuWorldZ-(this.height / scale) / 2);
+                                x = contextMenuWorldX - ((this.width / 2.0) / scale);
+                                z = contextMenuWorldZ - (((this.height - bottomMapOffset) / 2.0) / scale);
                                 onMouseMove(x, z);
                                 resetFeatures();
                             }
@@ -311,6 +318,7 @@ public class FullScreenMap extends Screen {
                 renderContextMenu = false;
             }
 
+            // TODO: Restrict POI click activation to left-click (mbe.button() == 0) so right-clicks are preserved for map context menus.
             // Check to see if a thing has been clicked
             for (int i = shownFeatures.length - 1; i >= 0; i--) {
                 if(shownFeatures[i].id == 1) {
@@ -487,8 +495,8 @@ public class FullScreenMap extends Screen {
 
             }
 
-            // Set text to draw coords to 
-            currentLocationCoordinates = Component.literal(String.format("%d, %d", (int) (x + (mouseX / scale)), (int) (z + (mouseY / scale))));
+            // Set text to draw coords, round (floor) now
+            currentLocationCoordinates = Component.literal(String.format("%d, %d", (int) Math.floor(x + (mouseX / scale)), (int) Math.floor(z + (mouseY / scale))));
         } else {
             Component.literal("--, --");
         }
@@ -556,10 +564,10 @@ public class FullScreenMap extends Screen {
                 x + TooltipRenderUtil.PADDING_LEFT + minecraft.font.width(content.get(0)) + 1,
                 y + TooltipRenderUtil.PADDING_TOP, 40, 8, 8, 8, 64, 64);
 
-        int hashed = UUID.fromString(player.uuid.replaceFirst("(\\p{XDigit}{8})(\\p{XDigit}{4})(\\p{XDigit}{4})(\\p{XDigit}{4})(\\p{XDigit}{12})", "$1-$2-$3-$4-$5")).hashCode();
-        float[] hsv = java.awt.Color.RGBtoHSB((hashed >> 16) & 0xFF, (hashed >> 8) & 0xFF, hashed & 0xFF, null);
-        int rgbout = 0xFF000000 | (java.awt.Color.HSBtoRGB(hsv[0], Math.max(0.4f, hsv[1]), 1.0f) & 0xFFFFFF);
-        context.blit(RenderPipelines.GUI_TEXTURED, LOCATOR_DOT.get(), x + Minecraft.getInstance().font.width(content.get(0)) + 13, y + TooltipRenderUtil.PADDING_TOP, 0, 0, 8, 8, 9, 9, rgbout);
+        int rgbout = MapRenderUtils.uuidToPlayerColor(player.uuid);
+        context.blit(RenderPipelines.GUI_TEXTURED, MapRenderUtils.LOCATOR_DOT.get(),
+                x + Minecraft.getInstance().font.width(content.get(0)) + 13,
+                y + TooltipRenderUtil.PADDING_TOP, 0, 0, 8, 8, 9, 9, rgbout);
     }
 
     // Improved drawLine
@@ -579,18 +587,13 @@ public class FullScreenMap extends Screen {
     private final ResIdentifier hopperIcon = ResIdentifier.of("minecraft",
             "textures/item/hopper.png");
 
-    private final ResIdentifier OVERWORLD = ResIdentifier.of("minecraft", "overworld");
-    private final ResIdentifier NETHER = ResIdentifier.of("minecraft", "the_nether");
-    // Heh, eng
-    private final ResIdentifier ENG = ResIdentifier.of("minecraft", "the_end");
-
     private final TransportNetwork transportNetwork = new TransportNetwork();
 
     public void recalculateNetworks() {
         int tilesize = 1 << (17 - zoomlevel);
         double scale = (double) minimapTileSize / tilesize;
 
-        transportNetwork.recalculate(allNetworks, currentDimension, zoomlevel, minimapTileSize, x, z, this.width, this.height - bottomMapOffset, "FullScreenMap");
+        transportNetwork.recalculate(allNetworks, currentDimension, zoomlevel, scale, x, z, this.width, this.height - bottomMapOffset, "FullScreenMap");
     }
 
     public String currentDimension = getDimensionID();
@@ -904,25 +907,20 @@ public class FullScreenMap extends Screen {
             PlayerFetch hoveredPlayer = null;
             if (sp.showPlayers) {
                 ArrayList<PlayerFetch> playersList = pfu.getPlayers();
+                String localPlayerName = minecraft.player != null ? minecraft.player.getGameProfile().name() : "";
                 for (int i = 0; i < playersList.size(); i++) {
                     PlayerFetch player = playersList.get(i);
-                    if (minecraft.player.getName() == Component.literal(player.name))
+                    // Skip local player and render them locally
+                    if (player.name != null && player.name.equalsIgnoreCase(localPlayerName))
                         continue;
                     // Calculate the player's Effective X/Z coordinates for the map's current dimension.
                     // This must be done BEFORE checking if they are within the screen bounds (worldLeft/worldRight),
                     // otherwise players in the Nether will be skipped when zoomed in on the Overworld.
-                    double effectiveX = player.x;
-                    double effectiveZ = player.z;
+                    double dimensionScale = MapRenderUtils.getDimensionScale(player.world, currentDimension);
+                    if (dimensionScale == 0.0) continue;
 
-                    if (!currentDimension.equals(player.world)) {
-                        if (currentDimension.equals("minecraft_overworld")) {
-                            effectiveX = player.x * 8;
-                            effectiveZ = player.z * 8;
-                        } else {
-                            effectiveX = player.x / 8;
-                            effectiveZ = player.z / 8;
-                        }
-                    }
+                    double effectiveX = player.x * dimensionScale;
+                    double effectiveZ = player.z * dimensionScale;
 
                     if ((effectiveX > worldLeft && effectiveX < worldRight)
                             && (effectiveZ > worldTop && effectiveZ < worldBottom)) {
@@ -934,30 +932,58 @@ public class FullScreenMap extends Screen {
                         context.pose().rotate((float) Math.toRadians(player.yaw - 180));
                         context.pose().translate(-4, -4);
                         ResIdentifier playerMarkerChoice;
-                        if(minecraft.player.getName().equals(Component.literal(player.name))) {
-                            playerMarkerChoice = pfu.THIS_PLAYER;
-                        } else {
-                            switch (player.world) {
-                                case "minecraft_overworld":
-                                    playerMarkerChoice = pfu.OTHER_PLAYERS_OW;
-                                    break;
-                                case "minecraft_the_nether":
+                        int markerTint = 0xFFFFFFFF;
+                        switch (MapRenderUtils.getDimensionType(player.world)) {
+                            case MapRenderUtils.NETHER:
                                 playerMarkerChoice = pfu.OTHER_PLAYERS_NETHER;
+                                break;
+                            case MapRenderUtils.OVERWORLD:
+                                playerMarkerChoice = pfu.OTHER_PLAYERS_OW;
                                 break;
                             default:
                                 playerMarkerChoice = pfu.OTHER_PLAYERS_SOMEWHERE;
                                 break;
                         }
-                        }
                         context.blit(
                                 RenderPipelines.GUI_TEXTURED,
-                                playerMarkerChoice.get(),
-                                0, 0, 0, 0, 8, 8, 8, 8);
+                                playerMarkerChoice.get(), 0, 0, 0, 0, 8, 8, 8, 8, markerTint);
+
                         context.pose().popMatrix();
 
                         if (mouseX > offsetFromLeft - 4 && mouseX < offsetFromLeft + 4 && mouseY > offsetFromTop - 4
                                 && mouseY < offsetFromTop + 4) {
                             hoveredPlayer = player;
+                        }
+                    }
+                }
+
+                // Render local player directly from minecraft.player
+                if (minecraft.player != null && minecraft.level != null && !MapRenderUtils.isInQueue()) {
+                    MapRenderUtils.updateLocalPlayer();
+
+                    String localDimensionPath = CompatUtils.getIdentifier(minecraft.level.dimension()).getPath();
+                    double myDimensionScale = MapRenderUtils.getDimensionScale(MapRenderUtils.lastLocalPlayerWorld, localDimensionPath, currentDimension);
+
+                    if (myDimensionScale > 0.0) {
+                        double myEffectiveX = MapRenderUtils.lastLocalPlayerX * myDimensionScale;
+                        double myEffectiveZ = MapRenderUtils.lastLocalPlayerZ * myDimensionScale;
+
+                        if ((myEffectiveX > worldLeft && myEffectiveX < worldRight) && (myEffectiveZ > worldTop && myEffectiveZ < worldBottom)) {
+                            context.pose().pushMatrix();
+                            float offsetFromLeft = (float) ((myEffectiveX - worldLeft) * scale);
+                            float offsetFromTop = (float) ((myEffectiveZ - worldTop) * scale);
+                            context.pose().translate(offsetFromLeft, offsetFromTop);
+
+                            context.pose().rotate((float) Math.toRadians(MapRenderUtils.lastLocalPlayerYaw));
+                            context.pose().translate(-4, -4);
+
+                            ResIdentifier myMarker = pfu.THIS_PLAYER;
+                            int myMarkerTint = MapRenderUtils.isEnd(localDimensionPath) ? MapRenderUtils.END_MARKER_TINT : 0xFFFFFFFF;
+                            context.blit(
+                                    RenderPipelines.GUI_TEXTURED,
+                                    myMarker.get(), 0, 0, 0, 0, 8, 8, 8, 8, myMarkerTint);
+    
+                            context.pose().popMatrix();
                         }
                     }
                 }
@@ -1078,16 +1104,36 @@ public class FullScreenMap extends Screen {
 
         int newtilesize = 1 << (17 - zoomlevel);
         double newscale = (double) minimapTileSize / newtilesize;
-        x = (int) (cx - (this.width / 2.0) / newscale);
-        z = (int) (cz - (this.height / 2.0) / newscale);
+        // don't round quite yet so we have smoother map movement
+        x = cx - (this.width / 2.0) / newscale;
+        z = cz - (this.height / 2.0) / newscale;
     }
 
-    private static final String[] DIMENSION_CYCLE = {
-        "minecraft_overworld",
-        "minecraft_the_nether",
-        "minecraft_terra2"
-        // "minecraft_the_end" can be added here
+    private static final String[] WORLD_CYCLE = {
+        "Mondo",
+        "Terra2"
+        // "Cielo" 
     };
+
+    public String currentWorld = "Mondo";
+    private Button worldButton;
+    private Button dimensionButton;
+
+    private String[] getWorldTilesets(String world) {
+        return MapRenderUtils.getWorldTilesets(world).toArray(new String[0]);
+    }
+
+    public void updateDimensionButtons() {
+        currentWorld = MapRenderUtils.getWorld(currentDimension);
+        boolean canSwitchDimensions = getWorldTilesets(currentWorld).length > 1;
+        if (worldButton != null) {
+            worldButton.setMessage(Component.literal(currentWorld).withStyle(Style.EMPTY.withHoverEvent(new HoverEvent.ShowText(Component.literal("Switch World")))));
+        }
+        if (dimensionButton != null) {
+            dimensionButton.active = canSwitchDimensions;
+            dimensionButton.setMessage(Component.literal(MapRenderUtils.prettyDimensionType(currentDimension)).withStyle(Style.EMPTY.withHoverEvent(new HoverEvent.ShowText(Component.literal("Switch Dimension")))));
+        }
+    }
 
     private double getDimensionCoordinateScale(String dimension) {
         // Defines the coordinate scale relative to the Overworld
@@ -1100,14 +1146,17 @@ public class FullScreenMap extends Screen {
     }
 
     public String getDimensionID() {
-        if(Minecraft.getInstance().level == null) return "minecraft_overworld";
-        return "minecraft_" + CompatUtils.getIdentifier(Minecraft.getInstance().level.dimension()).getPath();
+        String dim = MapRenderUtils.getCurrentDimension();
+        return "minecraft_unknown_world".equals(dim) ? "minecraft_overworld" : dim;
+
+
+
     }
 
     @Override
     protected void init() {
         showFilters = false;
-        currentDimension = "minecraft_" + CompatUtils.getIdentifier(Minecraft.getInstance().level.dimension()).getPath();
+        currentDimension = getDimensionID();
         Button filtersSave = Button.builder(Component.literal("Save"), (btn) -> {
             sp.saveSettings();
             btn.active = false;
@@ -1145,16 +1194,16 @@ public class FullScreenMap extends Screen {
             // Get current middle
             int oldtilesize = 1 << (17 - zoomlevel);
             double oldscale = (double) minimapTileSize / oldtilesize;
-            double oldMiddleX = (this.width / 2) / oldscale;
-            double oldMiddleZ = (this.height / 2) / oldscale;
+            double oldMiddleX = (this.width / 2.0) / oldscale;
+            double oldMiddleZ = (this.height / 2.0) / oldscale;
             zoomlevel -= 1;
             if (zoomlevel < minZoomLevel)
                 zoomlevel = minZoomLevel;
             // Set position to new x/z
             int newtilesize = 1 << (17 - zoomlevel);
             double newscale = (double) minimapTileSize / newtilesize;
-            double newMiddleX = (this.width / 2) / newscale;
-            double newMiddleZ = (this.height / 2) / newscale;
+            double newMiddleX = (this.width / 2.0) / newscale;
+            double newMiddleZ = (this.height / 2.0) / newscale;
             x -= (newMiddleX - oldMiddleX);
             z -= (newMiddleZ - oldMiddleZ);
             onMouseMove(x, z);
@@ -1164,16 +1213,16 @@ public class FullScreenMap extends Screen {
             // Get current middle
             int oldtilesize = 1 << (17 - zoomlevel);
             double oldscale = (double) minimapTileSize / oldtilesize;
-            double oldMiddleX = (this.width / 2) / oldscale;
-            double oldMiddleZ = (this.height / 2) / oldscale;
+            double oldMiddleX = (this.width / 2.0) / oldscale;
+            double oldMiddleZ = (this.height / 2.0) / oldscale;
             zoomlevel += 1;
             if (zoomlevel > maxZoomLevel)
                 zoomlevel = maxZoomLevel;
             // Set position to new x/z
             int newtilesize = 1 << (17 - zoomlevel);
             double newscale = (double) minimapTileSize / newtilesize;
-            double newMiddleX = (this.width / 2) / newscale;
-            double newMiddleZ = (this.height / 2) / newscale;
+            double newMiddleX = (this.width / 2.0) / newscale;
+            double newMiddleZ = (this.height / 2.0) / newscale;
             x -= (newMiddleX - oldMiddleX);
             z -= (newMiddleZ - oldMiddleZ);
             onMouseMove(x, z);
@@ -1198,21 +1247,60 @@ public class FullScreenMap extends Screen {
             sponsorURLString = banner.link;
         });
 
-        Button dimensionButton = Button.builder(
-            Component.literal(pfu.prettyDimensionName(currentDimension)).withStyle(Style.EMPTY.withHoverEvent(new HoverEvent.ShowText(Component.literal("Switch Dimension")))),
+        // his and hers World and Dimension buttons
+        int dimensionBtnWidth = minecraft.font.width("Overworld") + 5;
+        int dimensionBtnX = this.width - dimensionBtnWidth - 5;
+        int worldBtnWidth = minecraft.font.width("Terra2") + 8;
+        int worldBtnX = dimensionBtnX - worldBtnWidth - 4;
+
+        worldButton = Button.builder(
+            Component.literal(currentWorld).withStyle(Style.EMPTY.withHoverEvent(new HoverEvent.ShowText(Component.literal("Switch World")))),
             (btn) -> {
+                String oldDimension = currentDimension;
+
+                int nextWorldIndex = 0;
+                for (int i = 0; i < WORLD_CYCLE.length; i++) {
+                    if (WORLD_CYCLE[i].equals(currentWorld)) {
+                        nextWorldIndex = (i + 1) % WORLD_CYCLE.length;
+                        break;
+                    }
+                }
+                currentWorld = WORLD_CYCLE[nextWorldIndex];
+                currentDimension = getWorldTilesets(currentWorld)[0];
+                updateDimensionButtons();
+
+                double coordScale = getDimensionCoordinateScale(oldDimension) / getDimensionCoordinateScale(currentDimension);
+                int zoomDelta = getDimensionZoomOffset(currentDimension) - getDimensionZoomOffset(oldDimension);
+
+                if (coordScale != 1.0 || zoomDelta != 0) {
+                    changeMapScale(zoomDelta, coordScale);
+                }
+
+                onMouseMove(x, z);
+                resetClaims();
+                resetFeatures();
+            }
+        ).bounds(worldBtnX, this.height - 26, worldBtnWidth, 20).build();
+        this.addRenderableWidget(worldButton);
+
+        dimensionButton = Button.builder(
+            Component.literal(MapRenderUtils.prettyDimensionType(currentDimension)).withStyle(Style.EMPTY.withHoverEvent(new HoverEvent.ShowText(Component.literal("Switch Dimension")))),
+            (btn) -> {
+                String[] worldTilesets = getWorldTilesets(currentWorld);
+                if (worldTilesets.length <= 1) return;
+
                 String oldDimension = currentDimension;
                 
                 // Find next dimension in cycle
                 int nextIndex = 0;
-                for (int i = 0; i < DIMENSION_CYCLE.length; i++) {
-                    if (DIMENSION_CYCLE[i].equals(oldDimension)) {
-                        nextIndex = (i + 1) % DIMENSION_CYCLE.length;
+                for (int i = 0; i < worldTilesets.length; i++) {
+                    if (worldTilesets[i].equals(oldDimension)) {
+                        nextIndex = (i + 1) % worldTilesets.length;
                         break;
                     }
                 }
-                currentDimension = DIMENSION_CYCLE[nextIndex];
-                btn.setMessage(Component.literal(pfu.prettyDimensionName(currentDimension)));
+                currentDimension = worldTilesets[nextIndex];
+                updateDimensionButtons();
 
                 double coordScale = getDimensionCoordinateScale(oldDimension) / getDimensionCoordinateScale(currentDimension);
                 int zoomDelta = getDimensionZoomOffset(currentDimension) - getDimensionZoomOffset(oldDimension);
@@ -1223,19 +1311,24 @@ public class FullScreenMap extends Screen {
                 }
 
                 onMouseMove(x, z);
+                resetClaims();
                 resetFeatures();
             }
         ).bounds(
-            this.width 
-            - minecraft.font.width("Overworld") 
-            - 10, this.height - 26, minecraft.font.width("Overworld") + 5, 20).build();
+            dimensionBtnX, this.height - 26, dimensionBtnWidth, 20).build();
         this.addRenderableWidget(dimensionButton);
+        updateDimensionButtons();
 
         Button goToMe = Button.builder(Component.literal(""), (btn) -> {
+            // could get nulled out if the server disconnects or world unloads
+            if (minecraft.player == null || minecraft.level == null || MapRenderUtils.isInQueue()) return;
             int tilesize = 1 << (17 - zoomlevel);
             double scale = (double) minimapTileSize / tilesize;
-            x = (int) (minecraft.player.getBlockX()-(this.width / scale) / 2);
-            z = (int) (minecraft.player.getBlockZ()-(this.height / scale) / 2);
+            String playerWorld = MapRenderUtils.getCurrentWorld();
+            String playerDimension = CompatUtils.getIdentifier(minecraft.level.dimension()).getPath();
+            double dimensionScale = MapRenderUtils.getDimensionScale(playerWorld, playerDimension, currentDimension);
+            x = (minecraft.player.getX() * dimensionScale) - ((this.width / 2.0) / scale);
+            z = (minecraft.player.getZ() * dimensionScale) - (((this.height - bottomMapOffset) / 2.0) / scale);
             onMouseMove(x, z);
             resetFeatures();
 
@@ -1245,13 +1338,16 @@ public class FullScreenMap extends Screen {
         if(sp.bigMapPos == BigMapPos.CENTRE_ON_SPAWN) {
             int tilesize = 1 << (17 - zoomlevel);
             double scale = (double) minimapTileSize / tilesize;
-            x = (int) (-(this.width / scale) / 2);
-            z = (int) (-(this.height / scale) / 2);
-        } else if(sp.bigMapPos == BigMapPos.CENTRE_ON_PLAYER) {
+            x = -((this.width / 2.0) / scale);
+            z = -(((this.height - bottomMapOffset) / 2.0) / scale);
+        } else if(sp.bigMapPos == BigMapPos.CENTRE_ON_PLAYER && minecraft.player != null && minecraft.level != null) {
             int tilesize = 1 << (17 - zoomlevel);
             double scale = (double) minimapTileSize / tilesize;
-            x = (int) (minecraft.player.getBlockX()-(this.width / scale) / 2);
-            z = (int) (minecraft.player.getBlockZ()-(this.height / scale) / 2);
+            String playerWorld = MapRenderUtils.getCurrentWorld();
+            String playerDimension = CompatUtils.getIdentifier(minecraft.level.dimension()).getPath();
+            double dimensionScale = MapRenderUtils.getDimensionScale(playerWorld, playerDimension, currentDimension);
+            x = (minecraft.player.getX() * dimensionScale) - ((this.width / 2.0) / scale);
+            z = (minecraft.player.getZ() * dimensionScale) - (((this.height - bottomMapOffset) / 2.0) / scale);
         }
         onMouseMove(x, z);
         resetFeatures();

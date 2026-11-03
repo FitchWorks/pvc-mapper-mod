@@ -1,10 +1,8 @@
 package larrytllama.pvcmappermod;
 
+import static larrytllama.pvcmappermod.MapRenderUtils.prettyDimensionName;
 import larrytllama.pvcmappermod.utils.*;
 
-import java.awt.Color;
-import java.awt.geom.Line2D;
-import java.awt.geom.Rectangle2D;
 import java.net.URI;
 import java.time.Duration;
 import java.time.Instant;
@@ -12,7 +10,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
-import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
 import org.jetbrains.annotations.Nullable;
@@ -39,9 +36,6 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.Style;
-
-import net.minecraft.world.entity.player.PlayerSkin;
-import net.minecraft.world.item.component.ResolvableProfile;
 
 /**
  * Definitions for players api
@@ -189,30 +183,13 @@ public class Minimap {
     public static final ResIdentifier MAP_BG = ResIdentifier.of("minecraft",
             "textures/gui/menu_background.png");
 
-    public static final ResIdentifier LOCATOR_DOT = ResIdentifier.of("minecraft",
-            "textures/gui/sprites/hud/locator_bar_dot/default_1.png");
 
-    public String prettyDimensionName(String dimension) {
-        switch (dimension) {
-            case "minecraft_overworld":
-                return "Overworld";
-            case "minecraft_the_nether":
-                return "Nether";
-            case "minecraft_the_end":
-                return "End";
-            case "minecraft_terra2":
-                return "Terra2";
-            default:
-                return "Unknown World";
-        }
-    }
 
     public String getDimensionNID() {
-        String dimension = "minecraft_" + CompatUtils.getIdentifier(Minecraft.getInstance().level.dimension()).getPath();
-        if(isInTerra2 && dimension.equals("minecraft_overworld")) return "minecraft_terra2";
-        else if(isInTerra2) return "minecraft_unknown_world";
-        else if(isInQueue) return "minecraft_unknown_world";
-        return dimension;
+        return MapRenderUtils.getCurrentDimension();
+
+
+
     }
 
     private void renderMinimapTooltip(/*? if <26.1 {*/GuiGraphics/*?} else {*//*GuiGraphicsExtractor*//*?}*/ context, @Nullable List<String> text) {
@@ -274,10 +251,8 @@ public class Minimap {
         context.blit(RenderPipelines.GUI_TEXTURED, playerTooltipSkin.get(), tooltipX + mcfont.width(text.get(0)) + 1, 8, 8, 8, 8, 8, 64, 64);
         context.blit(RenderPipelines.GUI_TEXTURED, playerTooltipSkin.get(), tooltipX + mcfont.width(text.get(0)) + 1, 8, 40, 8, 8, 8, 64, 64 );
 
-        int hashed = UUID.fromString(uuid.replaceFirst("(\\p{XDigit}{8})(\\p{XDigit}{4})(\\p{XDigit}{4})(\\p{XDigit}{4})(\\p{XDigit}{12})", "$1-$2-$3-$4-$5")).hashCode();
-        float[] hsv = Color.RGBtoHSB((hashed >> 16) & 0xFF, (hashed >> 8) & 0xFF, hashed & 0xFF, null);
-        int rgbout = 0xFF000000 | (Color.HSBtoRGB(hsv[0], Math.max(0.4f, hsv[1]), 1.0f) & 0xFFFFFF);
-        context.blit(RenderPipelines.GUI_TEXTURED, LOCATOR_DOT.get(), tooltipX + mcfont.width(text.get(0)) + 11, 8, 0, 0, 8, 8, 9, 9, rgbout);
+        int rgbout = MapRenderUtils.uuidToPlayerColor(uuid);
+        context.blit(RenderPipelines.GUI_TEXTURED, MapRenderUtils.LOCATOR_DOT.get(), tooltipX + mcfont.width(text.get(0)) + 11, 8, 0, 0, 8, 8, 9, 9, rgbout);
     }
 
     private String lastDimension = "";
@@ -295,8 +270,6 @@ public class Minimap {
         };
     }
 
-    public boolean isInTerra2 = false;
-    public boolean isInQueue = true;
     public boolean isLoadingIn = true;
     public String[] spinnerParts = {" |", "/", "-", "\\", " |", "/", "-", "\\"};
     private int spinnerPart = 0;
@@ -306,10 +279,16 @@ public class Minimap {
     public void recalculateNetworks() {
         int tilesize = 1 << (17 - zoomlevel);
         double scale = (double) minimapTileSize / tilesize;
-        double x = Minecraft.getInstance().player.getBlockX() - ((minimapTileSize/2)/scale);
-        double z = Minecraft.getInstance().player.getBlockZ() - ((minimapTileSize/2)/scale);
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null) return;
+        String currentDimensionPath = mc.level != null ? CompatUtils.getIdentifier(mc.level.dimension()).getPath() : "overworld";
+        String mapDimension = MapRenderUtils.getCurrentDimension();
 
-        transportNetwork.recalculate(allNetworks, getDimensionNID(), zoomlevel, minimapTileSize, x, z, minimapTileSize, minimapTileSize, "Minimap");
+        double dimensionScale = MapRenderUtils.getDimensionScale(MapRenderUtils.currentWorld, currentDimensionPath, mapDimension);
+        double x = (MapRenderUtils.lastLocalPlayerX * dimensionScale) - ((minimapTileSize / 2.0) / scale);
+        double z = (MapRenderUtils.lastLocalPlayerZ * dimensionScale) - ((minimapTileSize / 2.0) / scale);
+
+        transportNetwork.recalculate(allNetworks, mapDimension, zoomlevel, scale, x, z, minimapTileSize, minimapTileSize, "Minimap");
     }
 
     private float tickAccumulator = 0f; // Track ticks for stuff
@@ -318,13 +297,11 @@ public class Minimap {
     int lastZ = 0;
 
     public boolean playerInCoords(int x1, int z1, int x2, int z2, String dimension, int x, int z) {
-        if(dimension.equals(this.getDimensionNID())) {
-            return x1 < x && x2 > x && z1 < z && z2 > z;
-        } else if(this.getDimensionNID().equals("minecraft_overworld")) {
-            return x1 < x*8 && x2 > x*8 && z1 < z*8 && z2 > z*8;
-        } else {
-            return x1 < x/8 && x2 > x/8 && z1 < z/8 && z2 > z/8;
-        }
+        double scale = MapRenderUtils.getDimensionScale(dimension, MapRenderUtils.getCurrentDimension());
+        if (scale == 0.0) return false;
+        double mappedX = x * scale;
+        double mappedZ = z * scale;
+        return x1 < mappedX && x2 > mappedX && z1 < mappedZ && z2 > mappedZ;
     }
 
     public void render(/*? if <26.1 {*/GuiGraphics/*?} else {*//*GuiGraphicsExtractor*//*?}*/ context, DeltaTracker tickCounter) {
@@ -369,7 +346,7 @@ public class Minimap {
             return;
         }
 
-        if(isInQueue) {
+        if(MapRenderUtils.isInQueue()) {
             Font font = Minecraft.getInstance().font;
             GraphicsHelper.drawCenteredString(context, font, Component.literal("You're in..."), topLeftX + (minimapTileSize / 2), topLeftZ + (font.lineHeight * 2), 0xFFFFFFFF);
             GraphicsHelper.drawCenteredString(context, font, Component.literal("The Queue").withStyle(ChatFormatting.BOLD), topLeftX + (minimapTileSize / 2), topLeftZ + (font.lineHeight * 3), 0xFFFFFFFF);
@@ -384,7 +361,8 @@ public class Minimap {
             return;
         }
 
-        if(getDimensionNID() == "minecraft_unknown_world") {
+        String currentDimension = MapRenderUtils.getCurrentDimension();
+        if ("minecraft_unknown_world".equals(currentDimension)) {
             Font font = Minecraft.getInstance().font;
             GraphicsHelper.drawCenteredString(context, font, Component.literal("No map tiles"), topLeftX + (minimapTileSize/ 2), topLeftZ, 0xFFFFFFFF);
             GraphicsHelper.drawCenteredString(context, font, Component.literal("available for"), topLeftX + (minimapTileSize/ 2), topLeftZ + font.lineHeight, 0xFFFFFFFF);
@@ -401,8 +379,8 @@ public class Minimap {
             return;
         }
 
-        if(!this.lastDimension.equals(getDimensionNID())) {
-            this.lastDimension = getDimensionNID();
+        if(!this.lastDimension.equals(currentDimension)) {
+            this.lastDimension = currentDimension;
             // Reset image cache
             textureUrls = new String[4];
             // Including this one which should never realistically be a value
@@ -415,9 +393,15 @@ public class Minimap {
             };
         }
         boolean tooltipApplied = false;
+        MapRenderUtils.updateLocalPlayer();
         Minecraft mc = Minecraft.getInstance();
-        double x = mc.player.getBlockX();
-        double z = mc.player.getBlockZ();
+        String currentDimensionPath = mc.level != null ? CompatUtils.getIdentifier(mc.level.dimension()).getPath() : "overworld";
+        String mapDimension = MapRenderUtils.getCurrentDimension();
+
+        double dimensionScale = MapRenderUtils.getDimensionScale(MapRenderUtils.currentWorld, currentDimensionPath, mapDimension);
+        ResIdentifier playerMarker = MapRenderUtils.isNetherProjection(currentDimensionPath, currentDimension) ? OTHER_PLAYERS_NETHER : PLAYER;
+        double x = MapRenderUtils.lastLocalPlayerX * dimensionScale;
+        double z = MapRenderUtils.lastLocalPlayerZ * dimensionScale;
         // Calculate tile size from zoom
         int renderZoom = Math.min(8, zoomlevel);
         int renderTileSize = 1 << (17 - renderZoom);
@@ -433,9 +417,7 @@ public class Minimap {
             int newArrayIndex = 0;
             for (int i2 = divZ; i2 < divZ + 2; i2++) {
                 for (int i = divX; i < divX + 2; i++) {
-                    String thisDimension = getDimensionNID().equals("minecraft_terra2") && sp.useDarkTiles ? "minecraft_terra2_night" : getDimensionNID();
-                    String url = String.format("%s%s/%d/%d_%d.png",
-                        sp.mapTileSource, thisDimension, renderZoom, i, i2);
+                    String url = MapRenderUtils.getTileUrl(sp.mapTileSource, currentDimension, sp.useDarkTiles, renderZoom, i, i2);
                     textureUrls[newArrayIndex] = url;
                     newArrayIndex += 1;
                 }
@@ -457,7 +439,7 @@ public class Minimap {
             try {
                 java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder()
                     .uri(new URI(String.format("%s/fetch/places/%s/%d/%d/%d/%d", NetworkUtils.API_V1,
-                        getDimensionNID(), minx, maxx, minz, maxz)))
+                        currentDimension, minx, maxx, minz, maxz)))
                     .GET().build();
                 NetworkUtils.HTTP_CLIENT.sendAsync(request, java.net.http.HttpResponse.BodyHandlers.ofString())
                     .thenAccept(response -> {
@@ -632,7 +614,7 @@ public class Minimap {
                     context.blit(
                             RenderPipelines.GUI_TEXTURED,
                             placeMarkerChoice.get(),
-                            0, 0, 0, 0, 8, 8, 8, 8);
+                                0, 0, 0, 0, 8, 8, 8, 8);
                     context.pose().popMatrix();
 
                     // Render tooltip if being hovered
@@ -666,32 +648,19 @@ public class Minimap {
                     double offsetFromPlayerX;
                     double offsetFromPlayerZ;
                     context.pose().pushMatrix();
-                    
+                    double playerDimensionScale = MapRenderUtils.getDimensionScale(player.world, currentDimension);
+                    offsetFromPlayerX = (x - (player.x * playerDimensionScale)) * scale;
+                    offsetFromPlayerZ = (z - (player.z * playerDimensionScale)) * scale;
                     ResIdentifier playerMarkerChoice;
-                    switch (player.world) {
-                        case "minecraft_overworld":
-                            if(getDimensionNID().equals("minecraft_overworld")) {
-                                offsetFromPlayerX = (x - player.x) * scale;
-                                offsetFromPlayerZ = (z - player.z) * scale;
-                            } else {
-                                offsetFromPlayerX = (x - (player.x/8)) * scale;
-                                offsetFromPlayerZ = (z - (player.z/8)) * scale;
-                            }
-                            playerMarkerChoice = OTHER_PLAYERS_OW;
-                            break;
-                        case "minecraft_the_nether":
-                            if(getDimensionNID().equals("minecraft_overworld")) {
-                                offsetFromPlayerX = (x - (player.x*8)) * scale;
-                                offsetFromPlayerZ = (z - (player.z*8)) * scale;
-                            } else {
-                                offsetFromPlayerX = (x - player.x) * scale;
-                                offsetFromPlayerZ = (z - player.z) * scale;
-                            }
+                    int markerTint = 0xFFFFFFFF;
+                    switch (MapRenderUtils.getDimensionType(player.world)) {
+                        case MapRenderUtils.NETHER:
                             playerMarkerChoice = OTHER_PLAYERS_NETHER;
                             break;
+                        case MapRenderUtils.OVERWORLD:
+                            playerMarkerChoice = OTHER_PLAYERS_OW;
+                            break;
                         default:
-                            offsetFromPlayerX = (x - player.x) * scale;
-                            offsetFromPlayerZ = (z - player.z) * scale;
                             playerMarkerChoice = OTHER_PLAYERS_SOMEWHERE;
                             break;
                     }
@@ -706,7 +675,7 @@ public class Minimap {
                     context.blit(
                             RenderPipelines.GUI_TEXTURED,
                             playerMarkerChoice.get(),
-                            0, 0, 0, 0, 8, 8, 8, 8);
+                                0, 0, 0, 0, 8, 8, 8, 8, markerTint);
 
                     context.pose().popMatrix();
 
@@ -737,7 +706,7 @@ public class Minimap {
 
 
         // Get player yaw
-        float yawDeg = mc.player.getYRot() + 180f;
+        float yawDeg = MapRenderUtils.lastLocalPlayerYaw;
         float yawRad = (float) Math.toRadians(yawDeg); // negate for screen space
         context.pose().pushMatrix();
         // Move origin to icon center
@@ -746,13 +715,15 @@ public class Minimap {
         context.pose().rotate(yawRad);
         // Move origin back
         context.pose().translate(-4, -4);
+        int localPlayerTint = MapRenderUtils.isInEnd() ? MapRenderUtils.END_MARKER_TINT : 0xFFFFFFFF;
         context.blit(
                 RenderPipelines.GUI_TEXTURED,
-                PLAYER.get(),
+                playerMarker.get(),
                 0, 0,
                 0, 0, // u, v
                 8, 8, // draw size
-                8, 8 // texture size (map_icons.png)
+                8, 8, // texture size (map_icons.png)
+                localPlayerTint
         );
         context.pose().popMatrix();
 

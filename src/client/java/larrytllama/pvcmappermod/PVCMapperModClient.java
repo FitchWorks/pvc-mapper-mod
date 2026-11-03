@@ -176,7 +176,7 @@ public class PVCMapperModClient implements ClientModInitializer {
         this.t2mu = new Terra2MapUpload();
         // (ClientLevel, LevelChunk)
         ClientChunkEvents.CHUNK_LOAD.register((level, chunk) -> {
-            if(sp.t2TileUploads && isInPVC() && minimap.isInTerra2 && CompatUtils.getIdentifier(Minecraft.getInstance().level.dimension()).getPath() == "overworld") {  
+            if(sp.t2TileUploads && isInPVC() && MapRenderUtils.isInTerra2() && MapRenderUtils.isInOverworld()) {  
                 pfu.publishTerra2Chunk(t2mu.getChunkData(chunk), sp.t2maptoken);
             }
         });
@@ -229,7 +229,7 @@ public class PVCMapperModClient implements ClientModInitializer {
         scheduler.scheduleAtFixedRate(() -> {
             if(sp.collectData) {
                 CompletableFuture.runAsync(() -> {
-                    if(this.minimap.isInQueue || this.minimap.isInTerra2 || this.minimap.isLoadingIn || !this.isInPVC) return; // I love when borrowing old code just works <3
+                    if(!this.isInPVC || this.minimap.isLoadingIn || !MapRenderUtils.isWorld("Mondo")) return;
                     String jsonString = "[";
                     ClientPacketListener connection = Minecraft.getInstance().getConnection();
                     if(connection == null) return;
@@ -366,36 +366,38 @@ public class PVCMapperModClient implements ClientModInitializer {
                     //?}
                     getTabList();
                 
+                String prevWorld = MapRenderUtils.currentWorld;
+
                 // Check against IP if in server
                 if( Minecraft.getInstance().getConnection().getServerData() != null && 
                     Minecraft.getInstance().getConnection().getServerData().ip.contains("peacefulvanilla.club")) { // Just in case they change the subdomain
                     // If null, we're in Terra2
                     if(((TabListMixin) tabList).getHeader() == null || ((TabListMixin) tabList).getFooter() == null) {
-                        minimap.isInTerra2 = true;
-                        minimap.isInQueue = false;
+                        MapRenderUtils.currentWorld = "Terra2";
                     // Missing footer text, in Queue
                     } else if(!((TabListMixin) tabList).getFooter().getString().contains("Visit the website for more info")) {
-                        minimap.isInQueue = true;
-                        minimap.isInTerra2 = false;
+                        MapRenderUtils.currentWorld = "Queue";
                     // None of the above, in Mondo
                     } else {
-                        minimap.isInQueue = false;
-                        minimap.isInTerra2 = false;
+                        MapRenderUtils.currentWorld = "Mondo";
                     }
                     isInPVC = true;
                 } else {
                     // Just assume they want mondo, I don't care lol
-                    minimap.isInQueue = false;
-                    minimap.isInTerra2 = false;
+                    MapRenderUtils.currentWorld = "Mondo";
                     isInPVC = false; // Prevent sending ranks when not in server
                 }
                 minimap.isLoadingIn = false;
+
+                // Clear area popups on world switch
+                if (!prevWorld.equalsIgnoreCase(MapRenderUtils.currentWorld)) {
+                    insideIDs.clear();
+                }
             } 
             if(inLevelTicks % AREA_BORDER_CHECK_TICKS == 0) {
                 // Update less! :)
                 if (Minecraft.getInstance().player == null || Minecraft.getInstance().level == null) return;
-                if (this.minimap.isInQueue || this.minimap.isLoadingIn || "minecraft_unknown_world".equals(minimap.getDimensionNID())) {
-                    insideIDs.clear();
+                if (MapRenderUtils.isInQueue() || this.minimap.isLoadingIn || "minecraft_unknown_world".equals(MapRenderUtils.getCurrentDimension())) {
                     return;
                 }
     
@@ -405,7 +407,7 @@ public class PVCMapperModClient implements ClientModInitializer {
                 // Start up area popups
                 for (int i = 0; i < this.shortAreas.length; i++) {
                     if (
-                        this.shortAreas[i].dimension.equals(minimap.getDimensionNID()) &&
+                        this.shortAreas[i].dimension.equals(MapRenderUtils.getCurrentDimension()) &&
                         this.shortAreas[i].maxX > x &&
                         this.shortAreas[i].maxY > z &&
                         this.shortAreas[i].minX < x &&
@@ -424,13 +426,13 @@ public class PVCMapperModClient implements ClientModInitializer {
             }
         });
         ClientPlayConnectionEvents.JOIN.register((a, b, c) -> {
-            minimap.isInQueue = false;
-            minimap.isInTerra2 = false;
+            MapRenderUtils.currentWorld = "Mondo";
             minimap.isLoadingIn = true;
             insideIDs.clear();
             pfu.startUpdates(); // TODO: Renable when in PVC
         });
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
+            MapRenderUtils.currentWorld = "Mondo";
             insideIDs.clear();
             pfu.stopUpdates();
         });
@@ -527,7 +529,7 @@ public class PVCMapperModClient implements ClientModInitializer {
                         new HoverEvent.ShowText(Component.empty()
                             .append(Component.literal(foundplayer.name).withStyle(Style.EMPTY.withBold(true)))
                             .append(Component.literal( (foundplayer.nickname!=null?" ("+foundplayer.nickname+")":"") + "\n" ).setStyle(Style.EMPTY.withColor(ChatFormatting.GRAY)))
-                            .append(Component.literal(String.format("%d, %d, %d in %s\n",foundplayer.x,foundplayer.y,foundplayer.z, minimap.prettyDimensionName(foundplayer.world))))
+                            .append(Component.literal(String.format("%d, %d, %d in %s\n",foundplayer.x,foundplayer.y,foundplayer.z, MapRenderUtils.prettyDimensionName(foundplayer.world))))
                             .append(Component.literal(
                                 foundplayer.isAFK 
                                 ? String.format("AFK for %d mins", (Instant.now().toEpochMilli() - Instant.parse(foundplayer.afksince).toEpochMilli()) / 60000)

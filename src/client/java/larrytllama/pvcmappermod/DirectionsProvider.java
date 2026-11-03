@@ -1,7 +1,8 @@
 package larrytllama.pvcmappermod;
 
 import java.util.function.Consumer;
-import larrytllama.pvcmappermod.utils.CompatUtils;
+import static larrytllama.pvcmappermod.MapRenderUtils.*;
+
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
@@ -136,32 +137,13 @@ public class DirectionsProvider {
     String directionInstruction = "";
     int directionDistance = 0;
 
-    String getCurrentDimension() {
-        String dimension = "minecraft_" + CompatUtils.getIdentifier(Minecraft.getInstance().level.dimension()).getPath();
-        if(this.minimap != null && this.minimap.isInTerra2 && dimension.equals("minecraft_overworld")) return "minecraft_terra2";
-        return dimension;
-    }
-
-    String dimensionToPrettyName(String dim) {
-        switch (dim) {
-            case "minecraft_overworld":
-                return "Mondo Overworld";
-            case "minecraft_terra2":
-                return "Terra2 Overworld";
-            case "minecraft_the_nether":
-                return "Mondo Nether";
-            default:
-                return "Unknown World";
-        }
-    }
-
     void getAngleChangeInPath(int index) {
         if(index == currentPath.length) return; // We have arrived!
 
         if(!currentPath[index+1].data.dimension.equals(getCurrentDimension())) { // Switch dimension
             // Go to <new dimension>
             directionArrow = "🌌";
-            directionInstruction = "Switch to " + dimensionToPrettyName(currentPath[index+1].data.dimension);
+            directionInstruction = "Switch to " + prettyDimensionName(currentPath[index+1].data.dimension);
             waitingForDimensionChange = true;
             return;
         } else {

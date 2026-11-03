@@ -27,10 +27,7 @@ import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.Style;
-import net.minecraft.world.item.Item;
 
-import java.io.IOException;
-import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
@@ -126,10 +123,16 @@ public class MapperCmdHandler {
                 .then(ClientCommandManager.argument("x", IntegerArgumentType.integer())
                     .then(ClientCommandManager.argument("z", IntegerArgumentType.integer())
                         .then(ClientCommandManager.argument("dimension", StringArgumentType.string())
+                            .suggests((context, builder) -> {
+                                for (String dim : MapRenderUtils.MAP_TILESETS) {
+                                    builder.suggest(dim);
+                                }
+                                return builder.buildFuture();
+                            })
                             .executes((context) -> {
                                 int x = IntegerArgumentType.getInteger(context, "x");
                                 int z = IntegerArgumentType.getInteger(context, "z");
-                                String dimension = StringArgumentType.getString(context, "dimensionID");
+                                String dimension = StringArgumentType.getString(context, "dimension");
                                 PVCMapperModClient.setScreenOnNextTick(modclient.fsm, () -> {
                                     modclient.fsm.currentDimension = dimension;
                                     modclient.fsm.navToCoords(x, z);
@@ -223,7 +226,7 @@ public class MapperCmdHandler {
                         } else {
                             context.getSource().sendFeedback(Component.empty().append(directionsPrefix).append("Now loading directions..."));
                             modclient.dp.setupRoute(
-                                String.format("X%dZ%dD%s", Minecraft.getInstance().player.getBlockX(), Minecraft.getInstance().player.getBlockZ(), modclient.dp.getCurrentDimension()), 
+                                String.format("X%dZ%dD%s", Minecraft.getInstance().player.getBlockX(), Minecraft.getInstance().player.getBlockZ(), MapRenderUtils.getCurrentDimension()), 
                                 destinationID, 
                                 (MutableComponent chatMsg) -> {
                                     context.getSource().sendFeedback(Component.empty().append(directionsPrefix).append(chatMsg));
@@ -295,7 +298,7 @@ public class MapperCmdHandler {
                     } catch(Exception e) {
                         // Respectfully, ignore
                     }
-                    if(dim == null || dim.isEmpty()) dim = modclient.minimap.isInTerra2 ? "minecraft_terra2" : "minecraft_" + CompatUtils.getIdentifier(Minecraft.getInstance().level.dimension()).getPath();
+                    if(dim == null || dim.isEmpty()) dim = MapRenderUtils.getCurrentDimension();
                     // I validate x/z in the pfu
                     System.out.println("Finding nearest nether portal...");
                     pfu.fetchNearestNetherPortal(
@@ -340,7 +343,7 @@ public class MapperCmdHandler {
                             .executes(findportal) // /findportal <x> <z>
                             .then(ClientCommandManager.argument("dimension", StringArgumentType.string())
                                 .suggests((context, builder) -> {
-                                    for (String dim : List.of("minecraft_overworld", "minecraft_the_nether", "minecraft_terra2")) {
+                                    for (String dim : MapRenderUtils.getWorldTilesets(MapRenderUtils.getCurrentWorld())) {
                                         builder.suggest(dim);
                                     }
                                     return builder.buildFuture();
