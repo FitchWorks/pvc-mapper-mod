@@ -124,7 +124,7 @@ public class MapperCmdHandler {
                     .then(ClientCommandManager.argument("z", IntegerArgumentType.integer())
                         .then(ClientCommandManager.argument("dimension", StringArgumentType.string())
                             .suggests((context, builder) -> {
-                                for (String dim : MapRenderUtils.MAP_TILESETS) {
+                                for (String dim : MapRenderUtils.getAllTilesets()) {
                                     builder.suggest(dim);
                                 }
                                 return builder.buildFuture();
@@ -134,7 +134,7 @@ public class MapperCmdHandler {
                                 int z = IntegerArgumentType.getInteger(context, "z");
                                 String dimension = StringArgumentType.getString(context, "dimension");
                                 PVCMapperModClient.setScreenOnNextTick(modclient.fsm, () -> {
-                                    modclient.fsm.currentDimension = dimension;
+                                    modclient.fsm.viewedTileset = dimension;
                                     modclient.fsm.navToCoords(x, z);
                                 });
                                 return 1;
@@ -181,15 +181,7 @@ public class MapperCmdHandler {
                 }))
                 .then(ClientCommandManager.literal("clearcache").executes((context) -> {
                     // Reset minimap image state
-                    modclient.minimap.textureUrls = new String[4];
-                    // Including this one which should never realistically be a value
-                    // (Unless PVC's still expanding the map 15000 years later)
-                    modclient.minimap.tileCoords = new int[][] {
-                        { Integer.MIN_VALUE, Integer.MIN_VALUE },
-                        { Integer.MIN_VALUE, Integer.MIN_VALUE },
-                        { Integer.MIN_VALUE, Integer.MIN_VALUE },
-                        { Integer.MIN_VALUE, Integer.MIN_VALUE }
-                    };
+                    modclient.minimap.resetTileImageCache();
                     // Reset the central global tile cache in TextureUtils
                     TextureUtils.clearCache();
 

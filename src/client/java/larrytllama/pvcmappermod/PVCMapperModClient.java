@@ -369,8 +369,7 @@ public class PVCMapperModClient implements ClientModInitializer {
                 String prevWorld = MapRenderUtils.currentWorld;
 
                 // Check against IP if in server
-                if( Minecraft.getInstance().getConnection().getServerData() != null && 
-                    Minecraft.getInstance().getConnection().getServerData().ip.contains("peacefulvanilla.club")) { // Just in case they change the subdomain
+                if(pfu.isInPVC()) {
                     // If null, we're in Terra2
                     if(((TabListMixin) tabList).getHeader() == null || ((TabListMixin) tabList).getFooter() == null) {
                         MapRenderUtils.currentWorld = "Terra2";
@@ -390,14 +389,14 @@ public class PVCMapperModClient implements ClientModInitializer {
                 minimap.isLoadingIn = false;
 
                 // Clear area popups on world switch
-                if (!prevWorld.equalsIgnoreCase(MapRenderUtils.currentWorld)) {
+                if (!prevWorld.equals(MapRenderUtils.currentWorld)) {
                     insideIDs.clear();
                 }
             } 
             if(inLevelTicks % AREA_BORDER_CHECK_TICKS == 0) {
                 // Update less! :)
                 if (Minecraft.getInstance().player == null || Minecraft.getInstance().level == null) return;
-                if (MapRenderUtils.isInQueue() || this.minimap.isLoadingIn || "minecraft_unknown_world".equals(MapRenderUtils.getCurrentDimension())) {
+                if (MapRenderUtils.isInQueue() || this.minimap.isLoadingIn || MapRenderUtils.getCurrentDimension() == null) {
                     return;
                 }
     

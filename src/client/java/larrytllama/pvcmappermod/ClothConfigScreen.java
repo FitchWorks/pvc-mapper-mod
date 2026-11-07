@@ -12,6 +12,7 @@ import me.shedaniel.clothconfig2.impl.builders.IntSliderBuilder;
 import java.net.URI;
 import java.util.Optional;
 import net.minecraft.ChatFormatting;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
@@ -41,8 +42,9 @@ public class ClothConfigScreen extends Screen {
     private BooleanListEntry showNetworkLines;
     private StringListEntry mapTileSource;
     private IntegerSliderEntry miniMapZoom;
-    private LongSliderEntry minimapScale;
+    private IntegerSliderEntry minimapSize;
     private EnumListEntry<MiniMapPositions> miniMapPos;
+    private EnumListEntry<MinimapBackground> minimapBackground;
     private EnumListEntry<BigMapPos> bigMapPos;
     private EnumListEntry<OrwellianMeter> orwellMeter;
     private BooleanListEntry showWelcomePopup;
@@ -61,12 +63,15 @@ public class ClothConfigScreen extends Screen {
         .setSavingRunnable(() -> {
             sp.miniMapEnabled = this.showMinimap.getValue();
             sp.miniMapPos = this.miniMapPos.getValue();
+            sp.minimapBackground = this.minimapBackground.getValue();
             sp.mapTileSource = this.mapTileSource.getValue();
             sp.miniMapZoom = this.miniMapZoom.getValue();
             sp.useDarkTiles = this.useDarkTiles.getValue();
             sp.bigMapPos = this.bigMapPos.getValue();
             sp.checkForUpdates = this.checkForUpdates.getValue();
-            sp.minimapScale = this.minimapScale.getValue() / 100.0;
+            int step = this.minimapSize.getValue();
+            sp.minimapSizePercent = Minimap.stepToPercent(step);
+            sp.minimapScale = sp.minimapSizePercent == 0 ? 1.0 : sp.minimapSizePercent / 100.0;
             sp.collectData = this.collectData.getValue();
             sp.t2TileUploads = this.t2TileUploads.getValue();
             sp.t2maptoken = this.t2maptoken.getValue();
@@ -110,16 +115,33 @@ public class ClothConfigScreen extends Screen {
             .setTooltip(Component.literal("Choose where the minimap goes!"))
             .build();
         minimapSettings.addEntry(this.miniMapPos);
+        this.minimapBackground = entryBuilder.startEnumSelector(Component.literal("Minimap Background"), MinimapBackground.class, sp.minimapBackground)
+            .setDefaultValue(MinimapBackground.MENU_BG)
+            .setEnumNameProvider(bg -> bg == MinimapBackground.MAP_BG
+                ? Component.literal("Parchment Map")
+                : Component.literal("Darken Background"))
+            .setTooltip(Component.literal("Choose between menu background (black translucent) or map parchment background."))
+            .build();
+        minimapSettings.addEntry(this.minimapBackground);
         this.miniMapZoom = entryBuilder.startIntSlider(Component.literal("Minimap Default Zoom"), sp.miniMapZoom, 1, 15)
             .setDefaultValue(8) 
             .setTooltip(Component.literal("Set the default zoom level of the minimap (when the server loads)."), Component.literal("8 is the most zoomed in (default)."), Component.literal("1 is the most zoomed out."))
             .build();
         minimapSettings.addEntry(this.miniMapZoom);
-        this.minimapScale = entryBuilder.startLongSlider(Component.literal("Minimap Scale"), (long) (sp.minimapScale * 100), (long) (1), (long) (200))
-            .setDefaultValue(100) 
-            .setTooltip(Component.literal("Set the size of the minimap"), Component.literal("1% (the min) almost hides the map."), Component.literal("200% (the max) is 2x the original scale."), Component.literal("Note: Minimap mouse hovering is disabled when this isn't set to 100"))
+        int screenHeight = Minecraft.getInstance().getWindow().getGuiScaledHeight();
+        int maxStep = Minimap.getMaxSliderStep(screenHeight);
+        int currentStep = Minimap.percentToStep(sp.minimapSizePercent, maxStep);
+
+        this.minimapSize = entryBuilder.startIntSlider(Component.literal("Minimap Size"), currentStep, 0, maxStep)
+            .setDefaultValue(0)
+            .setTextGetter(step -> Component.literal(Minimap.getSliderLabel(step, screenHeight)))
+            .setTooltip(
+                Component.literal("Set the viewport size of the minimap relative to 80 in-game pixels."),
+                Component.literal("Auto-adjusts to your screen resolution and GUI scale."),
+                Component.literal("Larger sizes reveal more of the surrounding map.")
+            )
             .build();
-        minimapSettings.addEntry(this.minimapScale);
+        minimapSettings.addEntry(this.minimapSize);
 
         ConfigCategory alertSettings = builder.getOrCreateCategory(Component.literal("Alerts"));
         this.showWelcomePopup = entryBuilder.startBooleanToggle(Component.literal("Show Welcome Popup"),  sp.showWelcomePopup)
@@ -226,7 +248,7 @@ public class ClothConfigScreen extends Screen {
         
         uploadSettings.addEntry(
             entryBuilder.startTextDescription(
-                Component.literal("    ↳ Get your token: Sign in to the Editor → click at the top right → 'Tokens' ")
+                Component.literal("    ↳ Get your token: Sign in to the Editor → click at the top right → 'Tokens'.")
                     .append(Component.literal("Open Editor ↗").withStyle(s -> s
                         .withColor(ChatFormatting.AQUA)
                         .withUnderlined(true)
@@ -282,7 +304,7 @@ public class ClothConfigScreen extends Screen {
         miscSettings.addEntry(this.debugMode);
         
         miscSettings.addEntry(
-            entryBuilder.startTextDescription(Component.literal("To change keybinds, head to Options > Controls > Keybinds and scroll down!")).build()
+            entryBuilder.startTextDescription(Component.literal("To change keybinds, head to Options → Controls → Keybinds and scroll down!")).build()
         );
         
         return builder.build();
